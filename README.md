@@ -4,7 +4,7 @@ App web instalable (PWA) para Android que imita la app «iPod» del iPod touch /
 barra azul, pestañas negras (Listas, Artistas, Canciones, Álbumes, Más), listas con índice A–Z
 y la pantalla «Ahora suena» con la portada grande y su reflejo.
 
-> La versión anterior con rueda (iPod clásico) quedó guardada en la etiqueta `clickwheel`.
+> La versión anterior con rueda (iPod clásico) quedó guardada en la rama `clickwheel`.
 
 ```
 ipod/
