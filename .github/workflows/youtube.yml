@@ -1,0 +1,52 @@
+# Convierte un enlace de YouTube en MP3 (título, artista y portada) y lo deja
+# en la rama "descargas", de donde la app lo recoge y lo borra.
+# La app lo lanza sola; también puedes lanzarlo a mano desde la pestaña Actions.
+name: Descargar de YouTube
+run-name: yt ${{ inputs.id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Enlace de YouTube
+        required: true
+        type: string
+      id:
+        description: Identificador de la petición (lo pone la app)
+        required: false
+        type: string
+        default: manual
+
+permissions:
+  contents: write
+
+jobs:
+  descargar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # yt-dlp necesita un motor de JavaScript para YouTube
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Preparar
+        run: |
+          command -v ffmpeg >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
+          pip install -q -U "yt-dlp[default]"
+          yt-dlp --version
+
+      - name: Descargar y convertir a MP3
+        env:
+          YT_URL: ${{ inputs.url }}
+          REQ_ID: ${{ inputs.id }}
+          YT_COOKIES: ${{ secrets.YT_COOKIES }}
+        run: python .github/scripts/yt_action.py

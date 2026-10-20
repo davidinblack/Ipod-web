@@ -20,7 +20,12 @@ const fmt = (s) => {
 
 // ---------------------------------------------------------------- ajustes y listas
 
-const settings = Object.assign({ server: '', token: '', haptics: true },
+const onPages = location.hostname.endsWith('.github.io');
+function defaultRepo() {
+  const repo = location.pathname.split('/').filter(Boolean)[0];
+  return onPages && repo ? `${location.hostname.split('.')[0]}/${repo}` : 'davidinblack/Ipod-web';
+}
+const settings = Object.assign({ server: '', token: '', haptics: true, mode: onPages ? 'github' : 'server', repo: defaultRepo(), ghToken: '' },
   JSON.parse(localStorage.getItem('ipod.settings') || '{}'));
 const saveSettings = () => localStorage.setItem('ipod.settings', JSON.stringify(settings));
 
@@ -442,7 +447,7 @@ function settingsMenu() {
     { label: 'Aleatorio', value: P.shuffle ? 'Sí' : 'No', action: () => { PL.setShuffle(!P.shuffle); render(); } },
     { label: 'Repetir', value: REPEAT[P.repeat], action: () => { PL.setRepeat({ off: 'one', one: 'all', all: 'off' }[P.repeat]); render(); } },
     { label: 'Clicker (vibración)', value: settings.haptics ? 'Sí' : 'No', action: () => { settings.haptics = !settings.haptics; saveSettings(); render(); } },
-    { label: 'Servidor YouTube', arrow: true, action: () => push(serverMenu()) },
+    { label: 'Descargas YouTube', arrow: true, action: () => push(downloadsMenu()) },
     { label: 'Acerca de', arrow: true, action: () => push(aboutMenu()) },
   ], { dynamic: true });
 }
@@ -456,8 +461,11 @@ function aboutMenu() {
   ], { dynamic: true });
 }
 
-// --- YouTube
+// --- YouTube: dos formas de convertir — GitHub Actions (sin instalar nada) o un servidor propio
 
+const extractYouTube = (text) => String(text || '').match(/https?:\/\/(?:[\w-]+\.)?(?:youtube\.com|youtu\.be)\/[^\s"'<>]+/i)?.[0] || null;
+
+// servidor propio (server/server.py)
 const apiBase = () => (settings.server || location.origin).replace(/\/+$/, '');
 
 async function api(path, opts = {}) {
@@ -469,43 +477,176 @@ async function api(path, opts = {}) {
   if (!res.ok) {
     let msg = `Error ${res.status}`;
     try { msg = (await res.json()).error || msg; } catch {}
-    if (res.status === 404 && path === '/api/health') msg = 'Configura el servidor en Ajustes';
+    if (res.status === 404 && path === '/api/health') msg = 'No hay servidor aquí. Usa GitHub en Ajustes › Descargas';
     throw new Error(msg);
   }
   return res;
 }
 
-function serverMenu() {
-  return menu('Servidor', () => [
-    { label: 'Dirección', value: settings.server || 'Este sitio', arrow: true, action: () => push(inputScreen({
-      title: 'Servidor', label: 'URL del servidor (vacío = este sitio)', placeholder: 'http://localhost:8787', value: settings.server,
-      onSubmit: (v) => {
-        if (v && !/^https?:\/\//i.test(v)) return 'Debe empezar con http:// o https://';
-        settings.server = v; saveSettings(); pop();
+function filenameFrom(res) {
+  const cd = res.headers.get('Content-Disposition') || '';
+  const star = cd.match(/filename\*=UTF-8''([^;]+)/i);
+  if (star) { try { return decodeURIComponent(star[1]); } catch {} }
+  return cd.match(/filename="?([^";]+)"?/i)?.[1] || null;
+}
+
+async function serverDownload(url, s) {
+  await api('/api/health');
+  const job = await (await api('/api/jobs', { method: 'POST', body: JSON.stringify({ url }) })).json();
+  const labels = { queued: 'En cola…', downloading: 'Descargando…', converting: 'Convirtiendo a MP3…' };
+  let st;
+  for (;;) {
+    await sleep(900);
+    st = await (await api(`/api/jobs/${job.id}`)).json();
+    if (st.status === 'error') throw new Error(st.error || 'Falló la descarga');
+    setProgress(s, (st.progress || 0) / 100 * 0.92, labels[st.stage] || 'Procesando…', st.title || '');
+    if (st.status === 'done') break;
+  }
+  setProgress(s, 0.95, 'Guardando…');
+  const res = await api(`/api/jobs/${job.id}/file`);
+  const blob = await res.blob();
+  api(`/api/jobs/${job.id}`, { method: 'DELETE' }).catch(() => {});
+  return { blob, filename: filenameFrom(res) || `${st.title || 'audio'}.mp3` };
+}
+
+// GitHub Actions (.github/workflows/youtube.yml)
+const RAW = 'application/vnd.github.raw+json';
+const OBJ = 'application/vnd.github.object+json';
+
+async function gh(path, opts = {}, accept = 'application/vnd.github+json') {
+  if (!settings.repo) throw new Error('Falta el repositorio (Ajustes › Descargas)');
+  if (!settings.ghToken) throw new Error('Falta el token de GitHub (Ajustes › Descargas)');
+  let res;
+  try {
+    res = await fetch(`https://api.github.com/repos/${settings.repo}${path}`, {
+      ...opts, cache: 'no-store',
+      headers: {
+        Accept: accept, Authorization: `Bearer ${settings.ghToken}`, 'X-GitHub-Api-Version': '2022-11-28',
+        ...(opts.body ? { 'Content-Type': 'application/json' } : {}),
       },
-    })) },
-    { label: 'Clave', value: settings.token ? '••••' : 'Ninguna', arrow: true, action: () => push(inputScreen({
-      title: 'Clave', label: 'Clave del servidor (IPOD_TOKEN)', secret: true, value: settings.token,
-      onSubmit: (v) => { settings.token = v; saveSettings(); pop(); },
-    })) },
-    { label: 'Probar conexión', action: async () => {
-      try { const h = await (await api('/api/health')).json(); toast(`Conectado ✓ (yt-dlp ${h.ytdlp || '?'})`, 2500); }
-      catch (e) { toast(e.message, 2500); }
-    } },
-  ], { dynamic: true });
+    });
+  } catch { throw new Error('Sin conexión con GitHub'); }
+  if (res.ok) return res;
+  let msg = '';
+  try { msg = (await res.json()).message || ''; } catch {}
+  const e = new Error(
+    res.status === 401 ? 'Token de GitHub inválido o vencido'
+      : /rate limit/i.test(msg) ? 'Límite de GitHub; espera unos minutos'
+        : res.status === 404 ? 'No encontrado: revisa el repo y los permisos del token'
+          : res.status === 403 ? 'El token no tiene permiso (Actions y Contents: lectura y escritura)'
+            : `GitHub ${res.status}${msg ? `: ${msg}` : ''}`);
+  e.status = res.status;
+  throw e;
+}
+
+async function ghDownload(url, s) {
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  setProgress(s, 0.03, 'Enviando a GitHub…', '');
+  await gh('/actions/workflows/youtube.yml/dispatches', {
+    method: 'POST', body: JSON.stringify({ ref: 'main', inputs: { url, id } }),
+  });
+  const t0 = Date.now();
+  let run = null;
+  for (;;) {
+    await sleep(3000);
+    if (Date.now() - t0 > 20 * 60e3) throw new Error('GitHub tardó demasiado');
+    if (!run) {
+      const r = await (await gh('/actions/runs?event=workflow_dispatch&per_page=20')).json();
+      run = (r.workflow_runs || []).find((x) => (x.display_title || x.name) === `yt ${id}`) || null;
+      if (!run) { setProgress(s, 0.05, 'Esperando a GitHub…'); continue; }
+    } else {
+      run = await (await gh(`/actions/runs/${run.id}`)).json();
+    }
+    if (run.status === 'completed') break;
+    if (run.status !== 'in_progress') { setProgress(s, 0.07, 'En cola en GitHub…'); continue; }
+    try {
+      const steps = (await (await gh(`/actions/runs/${run.id}/jobs`)).json()).jobs?.[0]?.steps || [];
+      const done = steps.filter((x) => x.status === 'completed').length;
+      const now = steps.find((x) => x.status === 'in_progress')?.name || '';
+      setProgress(s, 0.1 + 0.75 * (steps.length ? done / steps.length : 0),
+        /MP3/.test(now) ? 'Descargando y convirtiendo…' : 'Preparando en GitHub…');
+    } catch {}
+  }
+
+  setProgress(s, 0.88, 'Recogiendo el MP3…');
+  let meta;
+  try { meta = await (await gh(`/contents/${id}.json?ref=descargas`, {}, RAW)).json(); }
+  catch { throw new Error(run.conclusion === 'success' ? 'No apareció el MP3 en la rama descargas' : 'Falló en GitHub (revisa la pestaña Actions)'); }
+  if (meta.status !== 'done') { ghCleanup(id); throw new Error(meta.error || 'Falló la descarga'); }
+  if (meta.title) setProgress(s, 0.9, null, meta.title);
+  const buf = await (await gh(`/contents/${id}.mp3?ref=descargas`, {}, RAW)).arrayBuffer();
+  ghCleanup(id);
+  return { blob: new Blob([buf], { type: 'audio/mpeg' }), filename: meta.filename || `${meta.title || 'audio'}.mp3` };
+}
+
+// borra lo recogido de la rama (si falla, el workflow lo limpia a las 24 h)
+async function ghCleanup(id) {
+  for (const ext of ['mp3', 'json']) {
+    try {
+      const { sha } = await (await gh(`/contents/${id}.${ext}?ref=descargas`, {}, OBJ)).json();
+      await gh(`/contents/${id}.${ext}`, { method: 'DELETE', body: JSON.stringify({ message: `recogida ${id}`, sha, branch: 'descargas' }) });
+    } catch {}
+  }
+}
+
+async function testConnection() {
+  try {
+    if (settings.mode === 'github') {
+      await gh('/actions/workflows/youtube.yml');
+      toast('GitHub conectado ✓', 2500);
+    } else {
+      const h = await (await api('/api/health')).json();
+      toast(`Conectado ✓ (yt-dlp ${h.ytdlp || '?'})`, 2500);
+    }
+  } catch (e) { toast(e.message, 3000); }
+}
+
+function downloadsMenu() {
+  return menu('Descargas', () => {
+    const it = [{ label: 'Método', value: settings.mode === 'github' ? 'GitHub' : 'Servidor', action: () => {
+      settings.mode = settings.mode === 'github' ? 'server' : 'github'; saveSettings(); render();
+    } }];
+    if (settings.mode === 'github') {
+      it.push(
+        { label: 'Repositorio', value: settings.repo || '—', arrow: true, action: () => push(inputScreen({
+          title: 'Repositorio', label: 'usuario/repositorio', placeholder: 'davidinblack/Ipod-web', value: settings.repo,
+          onSubmit: (v) => {
+            v = v.replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$|\/+$/g, '');
+            if (!/^[\w.-]+\/[\w.-]+$/.test(v)) return 'Formato: usuario/repositorio';
+            settings.repo = v; saveSettings(); pop();
+          },
+        })) },
+        { label: 'Token', value: settings.ghToken ? '••••' : 'Falta', arrow: true, action: () => push(inputScreen({
+          title: 'Token', label: 'Token de GitHub (github_pat_…)', secret: true, paste: true, value: settings.ghToken,
+          onSubmit: (v) => { settings.ghToken = v; saveSettings(); pop(); },
+        })) },
+      );
+    } else {
+      it.push(
+        { label: 'Dirección', value: settings.server || 'Este sitio', arrow: true, action: () => push(inputScreen({
+          title: 'Servidor', label: 'URL del servidor (vacío = este sitio)', placeholder: 'http://localhost:8787', value: settings.server,
+          onSubmit: (v) => {
+            if (v && !/^https?:\/\//i.test(v)) return 'Debe empezar con http:// o https://';
+            settings.server = v; saveSettings(); pop();
+          },
+        })) },
+        { label: 'Clave', value: settings.token ? '••••' : 'Ninguna', arrow: true, action: () => push(inputScreen({
+          title: 'Clave', label: 'Clave del servidor (IPOD_TOKEN)', secret: true, value: settings.token,
+          onSubmit: (v) => { settings.token = v; saveSettings(); pop(); },
+        })) },
+      );
+    }
+    it.push({ label: 'Probar conexión', action: testConnection });
+    return it;
+  }, { dynamic: true });
 }
 
 function youtubeMenu() {
   return menu('YouTube', [
     { label: 'Descargar canción…', arrow: true, action: () => askUrl() },
-    { label: 'Servidor', arrow: true, action: () => push(serverMenu()) },
+    { label: 'Configurar', arrow: true, action: () => push(downloadsMenu()) },
     { label: 'Tip: comparte desde YouTube', info: true },
   ]);
-}
-
-function extractYouTube(text) {
-  const m = String(text || '').match(/https?:\/\/(?:[\w-]+\.)?(?:youtube\.com|youtu\.be)\/[^\s"'<>]+/i);
-  return m ? m[0] : null;
 }
 
 function askUrl(initial = '') {
@@ -519,33 +660,13 @@ function askUrl(initial = '') {
   }));
 }
 
-function filenameFrom(res) {
-  const cd = res.headers.get('Content-Disposition') || '';
-  const star = cd.match(/filename\*=UTF-8''([^;]+)/i);
-  if (star) { try { return decodeURIComponent(star[1]); } catch {} }
-  return cd.match(/filename="?([^";]+)"?/i)?.[1] || null;
-}
-
 async function startDownload(url, replace) {
   const s = progressScreen('Descargando', 'Conectando…');
   if (replace) replaceTop(s); else push(s);
   try {
-    await api('/api/health');
-    const job = await (await api('/api/jobs', { method: 'POST', body: JSON.stringify({ url }) })).json();
-    const labels = { queued: 'En cola…', downloading: 'Descargando…', converting: 'Convirtiendo a MP3…' };
-    let st;
-    for (;;) {
-      await sleep(900);
-      st = await (await api(`/api/jobs/${job.id}`)).json();
-      if (st.status === 'error') throw new Error(st.error || 'Falló la descarga');
-      setProgress(s, (st.progress || 0) / 100 * 0.92, labels[st.stage] || 'Procesando…', st.title || '');
-      if (st.status === 'done') break;
-    }
-    setProgress(s, 0.95, 'Guardando…');
-    const res = await api(`/api/jobs/${job.id}/file`);
-    const blob = await res.blob();
-    const t = await L.saveDownload(blob, filenameFrom(res) || `${st.title || 'audio'}.mp3`);
-    api(`/api/jobs/${job.id}`, { method: 'DELETE' }).catch(() => {});
+    const { blob, filename } = settings.mode === 'github' ? await ghDownload(url, s) : await serverDownload(url, s);
+    setProgress(s, 0.97, 'Guardando…');
+    const t = await L.saveDownload(blob, filename);
     gen++;
     const done = menu('Listo', [
       { label: t.title, info: true },
@@ -558,7 +679,7 @@ async function startDownload(url, replace) {
     const err = menu('Error', [
       { label: e.message, info: true },
       { label: 'Reintentar', action: () => startDownload(url, true) },
-      { label: 'Servidor…', arrow: true, action: () => push(serverMenu()) },
+      { label: 'Configurar…', arrow: true, action: () => push(downloadsMenu()) },
     ]);
     if (cur() === s) replaceTop(err); else toast(e.message, 2500);
   }

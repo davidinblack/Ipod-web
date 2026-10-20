@@ -17,6 +17,9 @@ Variables de entorno opcionales:
     IPOD_TOKEN  clave que la app debe enviar en el encabezado X-Token
     IPOD_ORIGIN origen permitido por CORS (* por defecto)
     IPOD_WEB    carpeta de la app web (../web)
+    IPOD_MAX_DURATION  duración máxima en segundos (10800)
+    IPOD_COOKIES       ruta a un cookies.txt de YouTube (opcional)
+    IPOD_QUALITY       kbps del MP3 (192)
 """
 import hmac
 import json
@@ -46,7 +49,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 WEB_DIR = os.path.abspath(os.environ.get("IPOD_WEB", os.path.join(HERE, "..", "web")))
 WORK_DIR = tempfile.mkdtemp(prefix="ipod-dl-")
 JOB_TTL = 3600            # se borran los trabajos terminados después de 1 h
-MAX_DURATION = 3 * 3600   # no descarga videos de más de 3 h
+MAX_DURATION = int(os.environ.get("IPOD_MAX_DURATION", 3 * 3600))  # segundos
+COOKIES = os.environ.get("IPOD_COOKIES", "")  # cookies.txt opcional (si YouTube pide "no soy un bot")
+QUALITY = os.environ.get("IPOD_QUALITY", "192")
 
 YT_RE = re.compile(r"^https?://(?:[\w-]+\.)?(?:youtube\.com|youtu\.be|youtube-nocookie\.com)/", re.I)
 ID_RE = re.compile(r"^[0-9a-f]{32}$")
@@ -100,10 +105,11 @@ def run_job(job):
         "postprocessor_hooks": [on_postprocess],
         "postprocessors": [
             {"key": "FFmpegThumbnailsConvertor", "format": "jpg", "when": "before_dl"},
-            {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"},
+            {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": QUALITY},
             {"key": "FFmpegMetadata", "add_metadata": True, "add_chapters": False},
             {"key": "EmbedThumbnail"},
         ],
+        **({"cookiefile": COOKIES} if COOKIES and os.path.exists(COOKIES) else {}),
         # recorta la miniatura 16:9 a un cuadrado, como una portada de disco
         "postprocessor_args": {
             "thumbnailsconvertor+ffmpeg_o": [
