@@ -1,7 +1,10 @@
-# iPod Web — reproductor estilo iPod 1.ª generación
+# iPod Web — reproductor estilo iPod touch
 
-App web instalable (PWA) que funciona como un iPod clásico en Android: LCD monocromo,
-rueda táctil con MENU / ⏮ / ⏭ / ▶❚❚ y botón central, y portadas de las canciones.
+App web instalable (PWA) para Android que imita la app «iPod» del iPod touch / iPhone original:
+barra azul, pestañas negras (Listas, Artistas, Canciones, Álbumes, Más), listas con índice A–Z
+y la pantalla «Ahora suena» con la portada grande y su reflejo.
+
+> La versión anterior con rueda (iPod clásico) quedó guardada en la etiqueta `clickwheel`.
 
 ```
 ipod/
@@ -28,28 +31,28 @@ ipod/
 | Requisito | Cómo se resuelve |
 |---|---|
 | Basada en HTML, envolvible después en una app Android | Toda la app es `web/`. Se instala como PWA hoy y mañana se empaqueta con TWA o Capacitor apuntando a la misma URL. |
-| Actualizar sin descargar el HTML | El service worker pide siempre los archivos a la red (caché sólo sin conexión) y GitHub Pages / el servidor no lo cachean. Publicas cambios y el teléfono los recibe al abrir la app. Si la app estaba abierta, `version.json` hace aparecer **Actualizar app** en el menú principal. |
-| Leer archivos de un directorio local | **Biblioteca › Elegir carpeta…** usa File System Access; la carpeta se recuerda y se recorre con subcarpetas. Si tu Chrome no ofrece el selector de carpetas, **Agregar archivos…** copia las canciones al almacenamiento privado de la app. |
-| Descargar desde YouTube | **YouTube › Descargar canción…** o **Compartir › iPod** desde la app de YouTube. GitHub Actions (o tu servidor) usa yt-dlp + ffmpeg y entrega un MP3 con título, artista y la miniatura recortada en cuadrado como portada. Se guarda en `TuCarpeta/YouTube/` (o en el almacenamiento de la app). |
+| Actualizar sin descargar el HTML | El service worker pide siempre los archivos a la red (caché sólo sin conexión) y GitHub Pages / el servidor no lo cachean. Publicas cambios y el teléfono los recibe al abrir la app. Si la app estaba abierta, `version.json` hace que te ofrezca **Actualizar**. |
+| Leer archivos de un directorio local | **Más › Elegir carpeta de música…** usa File System Access; la carpeta se recuerda y se recorre con subcarpetas. Si tu Chrome no ofrece el selector de carpetas, **Agregar archivos…** copia las canciones al almacenamiento privado de la app. |
+| Descargar desde YouTube | **Más › Descargar canción…** o **Compartir › iPod** desde la app de YouTube. GitHub Actions (o tu servidor) usa yt-dlp + ffmpeg y entrega un MP3 con título, artista y la miniatura recortada en cuadrado como portada. Se guarda en `TuCarpeta/YouTube/` (o en el almacenamiento de la app). |
 | Música con la pantalla apagada | Un único `<audio>` + Media Session: Chrome mantiene la reproducción en segundo plano y avanza de canción sola. |
-| Listas de reproducción | **Listas › Nueva lista…**. Mantén presionado ● sobre una canción, álbum o artista → **Añadir a lista…** |
+| Listas de reproducción | **Listas › Nueva lista…**. Mantén presionada una canción, álbum o artista → **Añadir a una lista…** |
 | Controles con la pantalla bloqueada | Media Session publica título, artista, álbum y portada; Android muestra la tarjeta con anterior / pausa / siguiente y barra de posición. |
 | Audífonos | Los botones del audífono pasan por Media Session: 1 toque pausa/reanuda, 2 toques siguiente, 3 toques anterior (según el audífono). |
 
 ## Controles
 
-| Gesto | Menús | Reproduciendo |
+| Dónde | Gesto | Qué hace |
 |---|---|---|
-| Girar la rueda | Mover selección (rápido = salta de 3 en 3) | Volumen |
-| ● toque | Elegir | Modo búsqueda (la rueda adelanta/atrasa) |
-| ● mantener | Opciones: reproducir siguiente, añadir a lista, quitar, eliminar archivo | Opciones de la canción actual |
-| MENU | Volver | Volver |
-| MENU mantener | Ir al menú principal | |
-| ⏮ / ⏭ toque | Canción anterior / siguiente | |
-| ⏮ / ⏭ mantener | Retroceder / adelantar dentro de la canción | |
-| ▶❚❚ | Reproducir / pausa | |
+| Listas | Tocar | Abrir / reproducir |
+| Listas | Mantener presionado | Reproducir a continuación, añadir a lista, quitar, eliminar archivo |
+| Listas | Arrastrar sobre el índice A–Z | Saltar a la letra |
+| Barra de pestañas | Tocar la pestaña activa | Volver al inicio de esa pestaña |
+| Ahora suena | Tocar la portada | Mostrar barra de posición, repetir y aleatorio |
+| Ahora suena | Deslizar la portada ← / → | Siguiente / anterior |
+| Ahora suena | Botón de la esquina | Ver la cola de reproducción (toca una para saltar) |
+| Ahora suena | Botón ‹ o «atrás» de Android | Volver a las listas |
 
-También puedes tocar directamente las filas del LCD. En la computadora: flechas, Enter, Esc, espacio y **h** (mantener).
+En la computadora: espacio (pausa), ← / → (anterior / siguiente) y Esc (volver).
 
 Las portadas salen de la etiqueta ID3 del MP3, o de un `cover.jpg` / `folder.jpg` en la misma carpeta (útil para M4A/FLAC).
 
@@ -63,14 +66,14 @@ Repositorio → **Settings › Pages › Build and deployment › Source: GitHub
 Luego **Actions › Publicar app › Run workflow** (o cualquier push que toque `web/`).
 La app queda en **https://davidinblack.github.io/Ipod-web/** → ábrela en Chrome → ⋮ › **Instalar app**.
 
-Cada push a `web/` vuelve a publicar y sella `version.json` solo; si la app estaba abierta aparece **Actualizar app**.
+Cada push a `web/` vuelve a publicar y sella `version.json` solo; si la app estaba abierta te ofrece **Actualizar**.
 
 ### 2. Token para las descargas (una sola vez)
 
 1. github.com › Settings › Developer settings › **Fine-grained tokens › Generate new token**.
 2. *Repository access*: **Only select repositories** → `Ipod-web`.
 3. *Permissions*: **Actions: Read and write** y **Contents: Read and write**.
-4. En la app: **Ajustes › Descargas YouTube** → Método **GitHub**, Repositorio `davidinblack/Ipod-web`,
+4. En la app: **Más › Configurar descargas** → Método **GitHub**, Repositorio `davidinblack/Ipod-web`,
    **Token** (pégalo) → **Probar conexión**.
 
 El token se guarda sólo en ese teléfono y sólo da acceso a este repositorio; si lo pierdes, revócalo.
@@ -107,6 +110,6 @@ python server/server.py               # http://localhost:8787
 
 ## Notas
 
-- El selector de carpetas (File System Access) depende de la versión de Chrome en Android; la app lo detecta y, si no está, usa **Agregar archivos…**. Chrome puede volver a pedir permiso de la carpeta al reabrir la app: aparece **Permitir «Carpeta»** arriba del menú.
+- El selector de carpetas (File System Access) depende de la versión de Chrome en Android; la app lo detecta y, si no está, usa **Agregar archivos…**. Chrome puede volver a pedir permiso de la carpeta al reabrir la app: la app te pregunta al abrir para volver a dar permiso.
 - Algunos fabricantes (Xiaomi, Huawei, Samsung con ahorro agresivo) cierran apps en segundo plano: excluye Chrome / la app de la optimización de batería si la música se corta.
 - Descarga sólo contenido que tengas derecho a guardar; los términos de YouTube restringen la descarga de videos ajenos.

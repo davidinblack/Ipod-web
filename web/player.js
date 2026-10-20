@@ -46,6 +46,10 @@ export function playList(ids, start = 0, { shuffle = P.shuffle } = {}) {
   return loadIndex(P.index, true);
 }
 
+export function jump(i) {
+  if (i >= 0 && i < P.queue.length) return loadIndex(i, true);
+}
+
 export function playNext(id) {
   if (!P.track) return playList([id], 0);
   P.queue.splice(P.index + 1, 0, id);
