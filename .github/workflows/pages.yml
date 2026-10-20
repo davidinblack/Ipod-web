@@ -27,7 +27,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Sellar versión
-        run: echo "{ \"version\": \"$(date -u +%Y.%m.%d)-${GITHUB_SHA::7}\" }" > web/version.json
+        run: |
+          echo "{ \"version\": \"$(date -u +%Y.%m.%d)-${GITHUB_SHA::7}\" }" > web/version.json
+          cat web/version.json
 
       - uses: actions/configure-pages@v5
 
