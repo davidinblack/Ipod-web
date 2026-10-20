@@ -1,3 +1,4 @@
+# Publicación automática de la app.
 # Publica la carpeta web/ en GitHub Pages cada vez que cambia en main.
 # La versión se sella con la fecha y el commit, así la app avisa "Actualizar app" sola.
 name: Publicar app
