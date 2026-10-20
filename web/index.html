@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#f3f3f0">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>iPod</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="ipod" id="ipod">
+    <div class="bezel">
+      <div class="lcd" id="lcd">
+        <header class="bar">
+          <span class="bar-icon" id="barIcon"></span>
+          <span class="bar-title" id="barTitle">iPod</span>
+          <span class="batt" id="batt"><i></i></span>
+        </header>
+        <section class="view" id="view"></section>
+        <div class="toast" id="toast" hidden></div>
+      </div>
+    </div>
+
+    <div class="wheel-area">
+      <div class="wheel" id="wheel" role="group" aria-label="Rueda de control">
+        <span class="lbl l-menu">MENU</span>
+        <span class="lbl l-prev" aria-hidden="true">
+          <svg viewBox="0 0 24 12"><path d="M2 0h2v12H2zM13 0v12L4.5 6zM23 0v12L14.5 6z"/></svg>
+        </span>
+        <span class="lbl l-next" aria-hidden="true">
+          <svg viewBox="0 0 24 12"><path d="M1 0v12l8.5-6zM11 0v12l8.5-6zM20 0h2v12h-2z"/></svg>
+        </span>
+        <span class="lbl l-play" aria-hidden="true">
+          <svg viewBox="0 0 24 12"><path d="M2 0v12l9-6zM14 0h3v12h-3zM19.5 0h3v12h-3z"/></svg>
+        </span>
+        <button class="center" id="center" aria-label="Seleccionar"></button>
+      </div>
+    </div>
+  </main>
+
+  <input type="file" id="filePick" accept="audio/*,.mp3,.m4a,.flac,.ogg,.opus,.wav" multiple hidden>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
