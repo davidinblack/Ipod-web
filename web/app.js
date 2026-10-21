@@ -39,6 +39,8 @@ const I = {
   gear: '<svg viewBox="0 0 24 24"><path d="M10 2h4l.6 2.8 1.9.8 2.4-1.6 2.8 2.8-1.6 2.4.8 1.9L23 10v4l-2.8.6-.8 1.9 1.6 2.4-2.8 2.8-2.4-1.6-1.9.8L14 23h-4l-.6-2.8-1.9-.8-2.4 1.6-2.8-2.8 1.6-2.4-.8-1.9L1 14v-4l2.8-.6.8-1.9L3 5.1 5.8 2.3l2.4 1.6 1.9-.8zM12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"/></svg>',
   speaker: '<svg viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3zM15 8.5a5 5 0 0 1 0 7l-1.4-1.4a3 3 0 0 0 0-4.2zM17.8 5.7a9 9 0 0 1 0 12.6l-1.4-1.4a7 7 0 0 0 0-9.8z"/></svg>',
   pencil: '<svg viewBox="0 0 24 24"><path d="M15.5 4.5l4 4L8 20H4v-4zM17 3l1.5-1.5a1.4 1.4 0 0 1 2 0l2 2a1.4 1.4 0 0 1 0 2L21 7z"/></svg>',
+  share: '<svg viewBox="0 0 24 24"><path d="M12 2l5 5-1.4 1.4L13 5.8V15h-2V5.8L8.4 8.4 7 7zM4 12h3v2H6v6h12v-6h-1v-2h3v10H4z"/></svg>',
+  load: '<svg viewBox="0 0 24 24"><path d="M11 3h2v9.2l2.6-2.6L17 11l-5 5-5-5 1.4-1.4 2.6 2.6zM4 15h2v4h12v-4h2v6H4z"/></svg>',
   clock: '<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm-1 4v7l5 3 1-1.7-4-2.4V6z"/></svg>',
 };
 
@@ -192,7 +194,7 @@ const thumbIO = new IntersectionObserver((entries) => {
 }, { rootMargin: '200px' });
 
 function rowHTML(r, i) {
-  const cls = ['row', r.sub ? 'two' : '', r.cover !== undefined ? 'album' : '', r.info ? 'info' : '', r.center ? 'center' : '', r.playing ? 'playing' : ''].join(' ');
+  const cls = ['row', r.dim ? 'pend' : '', r.sub ? 'two' : '', r.cover !== undefined ? 'album' : '', r.info ? 'info' : '', r.center ? 'center' : '', r.playing ? 'playing' : ''].join(' ');
   return `<div class="${cls}" data-i="${i}">`
     + (r.lead !== undefined ? `<span class="lead">${r.playing ? I.speaker : esc(r.lead ?? '')}</span>` : '')
     + (r.cover !== undefined ? `<div class="thumb" data-cover="${esc(r.cover || '')}">${I.note}</div>` : '')
@@ -468,9 +470,10 @@ function playlistsView() {
     sections: [{
       rows: [
         { title: 'Nueva lista…', icon: I.plus, onTap: newPlaylistFlow },
+        { title: 'Cargar lista compartida…', icon: I.load, onTap: loadSharedList },
         { title: 'Agregadas recientemente', icon: I.clock, chev: true, onTap: () => push(recentDetail()) },
         ...playlists.map((p) => ({
-          title: p.name, sub: `${p.tracks.filter((id) => lib.byId.has(id)).length} canciones`, chev: true,
+          title: p.name, sub: `${p.tracks.filter((id) => lib.byId.has(id)).length} canciones${p.pending?.length ? ` · ${p.pending.length} pendientes` : ''}`, chev: true,
           onTap: () => push(playlistDetail(p)),
           onHold: () => playlistOptions(p),
         })),
@@ -513,6 +516,8 @@ function detailView(def) {
               <button class="ld-btn" data-a="play"${ids.length ? '' : ' disabled'}>${I.play}<span>Reproducir</span></button>
               <button class="ld-btn" data-a="shuffle"${ids.length > 1 ? '' : ' disabled'}>${I.shuffle}<span>Mezclar</span></button>
               ${def.onEdit ? `<button class="ld-btn" data-a="edit">${I.pencil}<span>Editar</span></button>` : ''}
+              <button class="ld-btn" data-a="share"${ids.length || def.playlist?.pending?.length ? '' : ' disabled'}>${I.share}<span>Compartir</span></button>
+              ${def.playlist?.pending?.some((x) => x.url) ? `<button class="ld-btn" data-a="dl">${I.load}<span>Bajar ${def.playlist.pending.filter((x) => x.url).length}</span></button>` : ''}
             </div>
           </div>
           <div class="ld-list"></div>
@@ -531,7 +536,15 @@ function detailView(def) {
               onHold: () => songOptions(id, def.kind === 'playlist' ? { playlist: def.playlist } : {}),
             };
           }),
-        }],
+        }, ...(def.playlist?.pending?.length ? [{
+          title: 'Pendientes',
+          rows: def.playlist.pending.map((x) => ({
+            title: x.title, dim: true, lead: '↓',
+            sub: busy.has(def.playlist.id) && x.url ? 'Descargando…' : x.error ? `Error: ${x.error}` : x.url ? `${x.artist} · toca para descargar` : `${x.artist} · sin enlace de YouTube`,
+            onTap: () => (x.url ? downloadPending(def.playlist) : pendingOptions(def.playlist, x)),
+            onHold: () => pendingOptions(def.playlist, x),
+          })),
+        }] : [])],
         empty: def.kind === 'playlist'
           ? '<b>Lista vacía</b>Mantén presionada una canción y elige «Añadir a una lista».'
           : '<b>Sin canciones</b>',
@@ -541,6 +554,8 @@ function detailView(def) {
         if (a === 'play') playTracks(ids, 0, { shuffle: false, context });
         else if (a === 'shuffle') playTracks(ids, Math.floor(Math.random() * ids.length), { shuffle: true, context });
         else if (a === 'edit') def.onEdit();
+        else if (a === 'share') Promise.resolve(def.cover(300)).then((url) => shareList(def.title, ids, url, def.playlist?.pending || []));
+        else if (a === 'dl') downloadPending(def.playlist);
       });
       const cov = el.querySelector('.ld-cover');
       cov.onclick = () => def.onEdit?.();
@@ -702,6 +717,7 @@ async function editSong(id) {
       { key: 'artist', label: 'Artista', value: t.artist },
       { key: 'album', label: 'Álbum', value: t.album },
       { key: 'filename', label: 'Archivo', value: L.baseName(t), suffix: ext },
+      { key: 'source', label: 'YouTube', value: t.source || '', placeholder: 'https://youtu.be/… (para compartir)' },
     ],
     note: L.isMp3(t) ? 'Los cambios se guardan dentro del archivo MP3.' : 'En este formato el título y la imagen se guardan en la app; el nombre del archivo sí se cambia.',
   });
@@ -709,6 +725,10 @@ async function editSong(id) {
   const changes = {};
   for (const k of ['title', 'artist', 'album']) if (r.values[k] && r.values[k] !== t[k]) changes[k] = r.values[k];
   if (r.values.filename && r.values.filename !== L.baseName(t)) changes.filename = r.values.filename;
+  if ((r.values.source || '') !== (t.source || '')) {
+    if (r.values.source && !L.isYouTube(r.values.source)) { await alertBox({ title: 'Enlace no válido', message: 'El campo YouTube debe ser un enlace de youtube.com o youtu.be.' }); return; }
+    changes.source = r.values.source;
+  }
   if (r.picture !== undefined) changes.picture = r.picture ? { mime: r.picture.mime, data: r.picture.data } : null;
   if (!Object.keys(changes).length) return;
   const hud = progressHud('Guardando…');
@@ -787,6 +807,219 @@ async function editPlaylist(p) {
   if (top().detail) { stack()[stack().length - 1] = playlistDetail(p); showTop(); }
   refreshAll();
   if (P.context?.key === p.id) { P.context.title = p.name; syncNow(); }
+}
+
+// --- compartir y cargar listas (archivo con los enlaces de YouTube)
+
+const LIST_TYPE = 'ipod-web-lista';
+const appURL = () => location.origin + location.pathname.replace(/index\.html$/, '');
+
+const normKey = (s) => NORM(String(s || '').toLowerCase())
+  .replace(/\(.*?\)|\[.*?\]/g, ' ')
+  .replace(/\b(official|oficial|video|audio|lyrics?|letra|hd|hq|remaster(ed)?)\b/g, ' ')
+  .replace(/[^a-z0-9]+/g, ' ').trim();
+const ytId = (u) => String(u || '').match(/(?:v=|youtu\.be\/|shorts\/|embed\/)([\w-]{11})/)?.[1] || null;
+
+async function imageForShare(url) {
+  if (!url) return null;
+  try {
+    const bmp = await createImageBitmap(await (await fetch(url)).blob());
+    const s = Math.min(bmp.width, bmp.height), c = document.createElement('canvas');
+    c.width = c.height = Math.min(300, s);
+    c.getContext('2d').drawImage(bmp, (bmp.width - s) / 2, (bmp.height - s) / 2, s, s, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.8);
+  } catch { return null; }
+}
+
+/** Crea el archivo de la lista y abre el menú Compartir de Android (WhatsApp, Bluetooth, Quick Share…). */
+async function shareList(name, ids, coverUrl, pending = []) {
+  const tracks = ids.map((id) => lib.byId.get(id)).filter(Boolean)
+    .map((t) => ({ title: t.title, artist: t.artist, album: t.album, url: t.source || '' }));
+  tracks.push(...pending.map((x) => ({ title: x.title, artist: x.artist, album: x.album || '', url: x.url || '' })));
+  if (!tracks.length) { toast('La lista está vacía'); return; }
+  const data = { type: LIST_TYPE, version: 1, name, created: new Date().toISOString(), app: appURL(), image: await imageForShare(coverUrl), tracks };
+  const noUrl = tracks.filter((t) => !t.url).length;
+  const fname = `${L.safeName(name).replace(/\.+$/, '')}.lista.txt`;
+  const file = new File([JSON.stringify(data, null, 1)], fname, { type: 'text/plain' });
+  const text = `Lista «${name}» (${tracks.length} canciones) para iPod Web.\nÁbrela en la app: Listas › Cargar lista compartida.\n${appURL()}`;
+  if (noUrl) {
+    const r = await alertBox({
+      title: 'Algunas no tienen enlace',
+      message: `${noUrl} de ${tracks.length} canciones no tienen enlace de YouTube; tu familia sólo podrá emparejarlas si ya las tiene. Puedes agregar el enlace en Editar canción.`,
+      buttons: [{ label: 'Cancelar', value: false }, { label: 'Compartir', main: true, value: true }],
+    });
+    if (!r.value) return;
+  }
+  try {
+    if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: name, text }); return; }
+  } catch (e) { if (e.name === 'AbortError') return; console.warn(e); }
+  // sin menú Compartir (computadora): se descarga el archivo
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file);
+  a.download = fname;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  toast('Archivo guardado en Descargas', 2200);
+}
+
+const listPick = h('<input type="file" accept=".txt,.json,text/plain,application/json" hidden>');
+document.body.appendChild(listPick);
+
+function pickListFile() {
+  return new Promise((resolve) => {
+    listPick.value = '';
+    const done = () => { listPick.onchange = listPick.oncancel = null; resolve(listPick.files?.[0] || null); };
+    listPick.onchange = done;
+    listPick.oncancel = done;
+    listPick.click();
+  });
+}
+
+/** Busca cada canción en la biblioteca: primero por enlace, luego por título y artista. */
+function matchTrack(item) {
+  const id = ytId(item.url);
+  if (id) {
+    const t = lib.tracks.find((x) => ytId(x.source) === id);
+    if (t) return t;
+  }
+  const kt = normKey(item.title), ka = normKey(item.artist);
+  if (!kt) return null;
+  const same = lib.tracks.filter((x) => normKey(x.title) === kt);
+  return same.find((x) => normKey(x.artist) === ka) || (same.length === 1 ? same[0] : null);
+}
+
+async function loadSharedList() {
+  const f = await pickListFile();
+  if (!f) return;
+  let data;
+  try { data = JSON.parse(await f.text()); } catch { data = null; }
+  if (!data || data.type !== LIST_TYPE || !Array.isArray(data.tracks)) {
+    await alertBox({ title: 'Archivo no válido', message: 'Elige un archivo .lista.txt creado con «Compartir» en iPod Web.' });
+    return;
+  }
+  let name = String(data.name || 'Lista compartida').slice(0, 80);
+  const existing = playlists.find((p) => p.name === name);
+  let p;
+  if (existing) {
+    const v = await actionSheet(`Ya tienes una lista «${name}»`, [
+      { label: 'Actualizarla con la nueva', value: 'merge' },
+      { label: 'Crear otra lista', value: 'new' },
+    ]);
+    if (!v) return;
+    if (v === 'merge') p = existing;
+    else { let n = 2; while (playlists.some((x) => x.name === `${name} ${n}`)) n++; name = `${name} ${n}`; }
+  }
+  p ||= createPlaylist(name);
+  if (data.image && !p.image) p.image = data.image;
+
+  const have = new Set(p.tracks);
+  const pending = (p.pending ||= []);
+  let matched = 0, toDownload = 0, noLink = 0;
+  data.tracks.forEach((item, pos) => {
+    const t = matchTrack(item);
+    if (t) {
+      matched++;
+      if (!have.has(t.id)) { p.tracks.splice(Math.min(pos, p.tracks.length), 0, t.id); have.add(t.id); }
+    } else if (!pending.some((x) => (x.url && x.url === item.url) || (normKey(x.title) === normKey(item.title) && normKey(x.artist) === normKey(item.artist)))) {
+      pending.push({ title: String(item.title || '—'), artist: String(item.artist || ''), album: String(item.album || ''), url: L.isYouTube(item.url) ? item.url : '', pos });
+      if (L.isYouTube(item.url)) toDownload++; else noLink++;
+    }
+  });
+  savePlaylists();
+  if (tab !== 'playlists') selectTab('playlists');
+  stack().length = 1;
+  push(playlistDetail(p));
+
+  const lines = [`${matched} ya estaban en tu teléfono.`];
+  if (toDownload) lines.push(`${toDownload} se pueden descargar de YouTube.`);
+  if (noLink) lines.push(`${noLink} no traen enlace (quedan como pendientes).`);
+  const r = await alertBox({
+    title: `«${p.name}» cargada`, message: lines.join('\n'),
+    buttons: toDownload
+      ? [{ label: 'Después', value: false }, { label: `Descargar ${toDownload}`, main: true, value: true }]
+      : [{ label: 'OK', main: true, value: false }],
+  });
+  if (r.value) downloadPending(p);
+}
+
+// --- descarga de canciones pendientes de una lista
+
+const busy = new Set(); // listas descargando ahora
+
+async function downloadOne(url, prog) {
+  const { blob, filename, cover } = settings.mode === 'github' ? await ghDownload(url, prog) : await serverDownload(url, prog);
+  prog.set(0.97, 'Guardando…');
+  let t = await L.saveDownload(blob, filename);
+  // guarda el enlace de origen y, si falta, la portada dentro del MP3
+  const changes = {};
+  if (L.isMp3(t) && !t.source) changes.source = url;
+  let coverData = null;
+  if (cover && L.isMp3(t) && !t.hasPic) { coverData = new Uint8Array(await cover.arrayBuffer()); changes.picture = { mime: 'image/jpeg', data: coverData }; }
+  try {
+    if (Object.keys(changes).length) t = (await L.editTrack(t.id, changes)).track;
+    if (cover && !L.isMp3(t)) await L.setCoverOverride(t.id, cover);
+    if (!L.isMp3(t)) await L.editTrack(t.id, { source: url });
+  } catch (e) { console.warn('etiquetas', e); }
+  return t;
+}
+
+async function downloadPending(p) {
+  if (busy.has(p.id)) { toast('Ya se está descargando'); return; }
+  const items = (p.pending || []).filter((x) => x.url);
+  if (!items.length) { toast('No hay canciones con enlace para descargar'); return; }
+  busy.add(p.id);
+  const hud = progressHud(`Descargando para «${p.name}»…`, { hideable: true });
+  const prog = new Map();
+  let done = 0, fails = 0;
+  const update = () => {
+    const part = [...prog.values()].reduce((a, b) => a + b, 0);
+    hud.set((done + part) / items.length, `Descargando ${Math.min(done + prog.size, items.length)} de ${items.length}`, `${done} terminadas · ${fails} con error`);
+  };
+  const work = items.slice();
+  const worker = async () => {
+    while (work.length) {
+      const item = work.shift();
+      const shim = { set: (pct) => { prog.set(item, pct || 0); update(); } };
+      try {
+        // si mientras tanto ya apareció en la biblioteca, no se descarga
+        const t = matchTrack(item) || await downloadOne(item.url, shim);
+        if (!p.tracks.includes(t.id)) p.tracks.splice(Math.min(item.pos ?? p.tracks.length, p.tracks.length), 0, t.id);
+        p.pending = p.pending.filter((x) => x !== item);
+        done++;
+      } catch (e) {
+        fails++;
+        item.error = e.message;
+        console.warn('pendiente', item.title, e);
+      }
+      prog.delete(item);
+      savePlaylists();
+      update();
+      if (top()?.detail) refresh();
+    }
+  };
+  await Promise.all([worker(), worker()]); // dos a la vez
+  busy.delete(p.id);
+  hud.close();
+  refreshAll();
+  const msg = fails ? `${done} descargadas, ${fails} con error.\n${items.find((x) => x.error)?.error || ''}` : `${done} canciones descargadas.`;
+  if (hud.hidden || !fails) toast(`«${p.name}»: ${done} descargadas${fails ? `, ${fails} con error` : ''}`, 2600);
+  else await alertBox({ title: `«${p.name}»`, message: msg });
+}
+
+async function pendingOptions(p, item) {
+  const opts = [];
+  if (item.url) opts.push({ label: 'Descargar las pendientes', value: 'all' });
+  opts.push({ label: 'Agregar enlace de YouTube…', value: 'url' }, { label: 'Quitar de la lista', value: 'remove', red: true });
+  const v = await actionSheet(`${item.title}${item.artist ? ` — ${item.artist}` : ''}`, opts);
+  if (v === 'all') downloadPending(p);
+  else if (v === 'url') {
+    const u = await prompt('Enlace de YouTube', { value: item.url, placeholder: 'https://youtu.be/…' });
+    if (u == null) return;
+    if (u && !L.isYouTube(u)) { toast('No parece un enlace de YouTube', 2000); return; }
+    item.url = u; delete item.error; savePlaylists(); refresh();
+  } else if (v === 'remove') {
+    p.pending = p.pending.filter((x) => x !== item); savePlaylists(); refresh();
+  }
 }
 
 // --- acciones
@@ -1163,18 +1396,7 @@ async function askUrl(initial = '') {
 async function startDownload(url) {
   const s = progressHud('Conectando…', { hideable: true });
   try {
-    const { blob, filename, cover } = settings.mode === 'github' ? await ghDownload(url, s) : await serverDownload(url, s);
-    s.set(0.97, 'Guardando…');
-    let t = await L.saveDownload(blob, filename);
-    if (cover) {
-      // la portada también se guarda aparte; si el MP3 no la trae incrustada, se le agrega
-      try {
-        if (L.isMp3(t) && !t.hasPic) {
-          const data = new Uint8Array(await cover.arrayBuffer());
-          t = (await L.editTrack(t.id, { picture: { mime: 'image/jpeg', data } })).track;
-        } else if (!L.isMp3(t)) await L.setCoverOverride(t.id, cover);
-      } catch (e) { console.warn('portada', e); }
-    }
+    const t = await downloadOne(url, s);
     s.close();
     refreshAll();
     const r = await alertBox({

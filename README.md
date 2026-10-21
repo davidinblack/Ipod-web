@@ -65,6 +65,21 @@ En la computadora: espacio (pausa), ← / → (anterior / siguiente) y Esc (volv
 
 Las portadas salen de la etiqueta ID3 del MP3, o de un `cover.jpg` / `folder.jpg` en la misma carpeta (útil para M4A/FLAC).
 
+## Compartir listas con la familia
+
+1. Abre una lista o un álbum y toca **Compartir**. Se crea un archivo `Nombre.lista.txt` con el nombre, la imagen
+   y, por cada canción, título, artista, álbum y **enlace de YouTube**. Mándalo por WhatsApp, Bluetooth, Quick Share o correo.
+2. Quien lo recibe abre la app → **Listas › Cargar lista compartida…** y elige el archivo.
+   - Las canciones que ya tiene se emparejan solas (por enlace, o por título y artista).
+   - Las que faltan quedan como **Pendientes**; con **Bajar** se descargan de YouTube (dos a la vez) y se acomodan
+     en su lugar dentro de la lista.
+   - Si ya tenía una lista con ese nombre, puede actualizarla o crear otra.
+3. Las canciones descargadas guardan su enlace dentro del MP3 (marco ID3 `WOAS`), así se pueden volver a compartir.
+   Para canciones que no vinieron de YouTube, agrega el enlace en **Editar canción › YouTube**.
+
+Para descargar, cada teléfono necesita las descargas configuradas (**Más › Configurar descargas**). Pueden usar todos
+este mismo repositorio con un token propio cada quien, o el mismo token (sólo da acceso a este repositorio).
+
 ## Puesta en marcha (sin instalar nada)
 
 La app vive en GitHub Pages y las descargas de YouTube las hace GitHub Actions.

@@ -8,6 +8,9 @@ const TEXT = {
   TRCK: 'track', TRK: 'track',
 };
 
+const YT_URL = /https?:\/\/(?:[\w-]+\.)?(?:youtube\.com|youtu\.be)\/[^\s"'<>\u0000]+/i;
+export const isYouTube = (u) => YT_URL.test(String(u || ''));
+
 const syncsafe = (b, o) => ((b[o] & 0x7f) << 21) | ((b[o + 1] & 0x7f) << 14) | ((b[o + 2] & 0x7f) << 7) | (b[o + 3] & 0x7f);
 const u32 = (b, o) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
 
@@ -33,6 +36,12 @@ function decode(bytes, enc) {
   try {
     return new TextDecoder(label).decode(bytes).split('\0')[0].trim();
   } catch { return ''; }
+}
+
+// decodifica todo el marco (descripción + valor), con los separadores como espacios
+function decodeAll(bytes, enc) {
+  const label = enc === 3 ? 'utf-8' : enc === 2 ? 'utf-16be' : enc === 1 ? 'utf-16le' : 'windows-1252';
+  try { return new TextDecoder(label).decode(bytes).replace(/[\u0000\ufeff\ufffe]/g, ' '); } catch { return ''; }
 }
 
 // posición justo después del terminador de cadena según la codificación
@@ -89,6 +98,11 @@ function parseFrames(buf, ver, flags, out, wantPicture) {
 
     if (TEXT[id]) {
       if (!out[TEXT[id]]) out[TEXT[id]] = decode(d.subarray(1), d[0]);
+    } else if (!out.source && (id === 'WOAS' || id === 'WOAF' || id === 'WXXX' || id === 'COMM' || id === 'TXXX' || id === 'WAS' || id === 'COM' || id === 'TXX' || id === 'WXX')) {
+      // enlace de origen (YouTube): lo escriben esta app (WOAS) o yt-dlp/ffmpeg (comentario / purl)
+      const txt = (id[0] === 'W' && id !== 'WXXX' && id !== 'WXX') ? decode(d, 0) : decodeAll(d.subarray(1), d[0]);
+      const m = txt.match(YT_URL);
+      if (m) out.source = m[0];
     } else if (id === 'APIC' || id === 'PIC') {
       out.hasPicture = true;
       if (wantPicture) {
@@ -143,7 +157,7 @@ export function guessFromName(name) {
 
 // ---------------------------------------------------------------- escritura (ID3v2.3)
 
-const REPLACED = new Set(['TIT2', 'TPE1', 'TALB', 'TRCK', 'TT2', 'TP1', 'TAL', 'TRK', 'APIC', 'PIC']);
+const REPLACED = new Set(['TIT2', 'TPE1', 'TALB', 'TRCK', 'TT2', 'TP1', 'TAL', 'TRK', 'APIC', 'PIC', 'WOAS']);
 
 function frame(id, data) {
   const f = new Uint8Array(10 + data.length);
@@ -187,6 +201,7 @@ export async function writeTags(file, values) {
   const merged = {
     title: values.title ?? old.title, artist: values.artist ?? old.artist,
     album: values.album ?? old.album, track: values.track ?? old.track,
+    source: values.source ?? old.source,
   };
   let audioStart = 0;
   const keep = [];
@@ -214,6 +229,7 @@ export async function writeTags(file, values) {
   if (merged.artist) frames.push(textFrame('TPE1', merged.artist));
   if (merged.album) frames.push(textFrame('TALB', merged.album));
   if (merged.track) frames.push(textFrame('TRCK', merged.track));
+  if (merged.source) frames.push(frame('WOAS', new TextEncoder().encode(merged.source.replace(/[^\x20-\x7e]/g, ''))));
   frames.push(...keep);
   const pic = values.picture === undefined ? old.picture : values.picture;
   if (pic?.data?.length) frames.push(pictureFrame(pic));

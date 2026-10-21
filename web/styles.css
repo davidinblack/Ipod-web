@@ -781,3 +781,8 @@ div.thumb svg { width: 26px; fill: #fff; }
   user-select: text;
 }
 .ed-suf { color: var(--gray); font-size: 15px; }
+
+/* pendientes de una lista compartida */
+.row.pend .t { color: #8a8a8a; }
+.row.pend .lead { color: #2a6be0; font-size: 17px; }
+.row.pend:active .t { color: #fff; }

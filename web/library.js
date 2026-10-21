@@ -1,6 +1,7 @@
 // library.js — biblioteca: carpeta local (File System Access), almacenamiento privado (OPFS) y metadatos
 
 import { readTags, guessFromName, writeTags } from './id3.js';
+export { isYouTube } from './id3.js';
 import * as db from './db.js';
 
 const AUDIO_RE = /\.(mp3|m4a|mp4|aac|ogg|oga|opus|flac|wav|weba|webm)$/i;
@@ -114,6 +115,8 @@ function makeMeta(id, file, tags, name) {
     album: tags.album || 'Álbum desconocido',
     track: parseInt(tags.track, 10) || 0,
     hasPic: !!tags.hasPicture,
+    source: tags.source || '',
+    v: 2,
   };
 }
 
@@ -140,7 +143,7 @@ export async function scanLibrary(onProgress) {
     try {
       const file = await f.handle.getFile();
       let m = cache.get(f.id);
-      if (!m || m.size !== file.size || m.mtime !== file.lastModified) {
+      if (!m || m.v !== 2 || m.size !== file.size || m.mtime !== file.lastModified) {
         m = makeMeta(f.id, file, await readTags(file), f.name);
         dirty.push(m);
       }
@@ -271,7 +274,7 @@ export async function editTrack(id, changes, { picBlob } = {}) {
   const renamed = newName !== t.name;
   if (renamed && await exists(parent, newName)) throw new Error('Ya existe un archivo con ese nombre');
 
-  const tagChanged = ['title', 'artist', 'album'].some((k) => changes[k] != null && changes[k] !== t[k]);
+  const tagChanged = ['title', 'artist', 'album', 'source'].some((k) => changes[k] != null && changes[k] !== t[k]);
   const prefix = t.id.slice(t.src.length + 1, t.id.length - t.name.length);
   const newId = `${t.src}:${prefix}${newName}`;
   const file = await handle.getFile();
@@ -300,7 +303,7 @@ export async function editTrack(id, changes, { picBlob } = {}) {
 
   // datos guardados aparte (formatos sin ID3, portadas personalizadas)
   const ovr = { ...(overrides[id] || {}) };
-  if (!isMp3(t)) for (const k of ['title', 'artist', 'album']) if (changes[k] != null) ovr[k] = changes[k];
+  if (!isMp3(t)) for (const k of ['title', 'artist', 'album', 'source']) if (changes[k] != null) ovr[k] = changes[k];
   delete overrides[id];
   if (Object.keys(ovr).length) overrides[newId] = ovr;
   await db.kvSet('overrides', overrides).catch(() => {});
