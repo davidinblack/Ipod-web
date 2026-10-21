@@ -1,6 +1,6 @@
 // library.js — biblioteca: carpeta local (File System Access), almacenamiento privado (OPFS) y metadatos
 
-import { readTags, guessFromName } from './id3.js';
+import { readTags, guessFromName, writeTags } from './id3.js';
 import * as db from './db.js';
 
 const AUDIO_RE = /\.(mp3|m4a|mp4|aac|ogg|oga|opus|flac|wav|weba|webm)$/i;
@@ -22,6 +22,7 @@ const fileHandles = new Map();   // id -> FileSystemFileHandle
 const parents = new Map();       // id -> carpeta contenedora
 const folderCovers = new Map();  // "src:ruta/" -> handle de cover.jpg
 const coverCache = new Map();    // id -> Blob|null
+let overrides = {};              // id -> {title, artist, album} para archivos que no son MP3
 
 // ---------- carpeta del usuario
 
@@ -132,6 +133,7 @@ export async function scanLibrary(onProgress) {
   try { await walk(await opfsMusic(), '', 'opfs', found); } catch (e) { console.warn('opfs', e); }
 
   const cache = new Map((await db.metaAll().catch(() => [])).map((m) => [m.id, m]));
+  overrides = (await db.kvGet('overrides').catch(() => null)) || {};
   const tracks = [], dirty = [];
   for (let i = 0; i < found.length; i++) {
     const f = found[i];
@@ -144,7 +146,7 @@ export async function scanLibrary(onProgress) {
       }
       fileHandles.set(f.id, f.handle);
       parents.set(f.id, f.parent);
-      tracks.push({ ...m, folder: f.folder, name: f.name, src: f.src });
+      tracks.push({ ...m, ...(overrides[f.id] || {}), folder: f.folder, name: f.name, src: f.src });
     } catch (e) { console.warn('omitido', f.id, e); }
     if (i % 8 === 0 || i === found.length - 1) onProgress?.(i + 1, found.length);
   }
@@ -165,7 +167,8 @@ export async function getCoverBlob(t) {
   if (coverCache.has(t.id)) return coverCache.get(t.id);
   let blob = null;
   try {
-    if (t.hasPic) {
+    blob = (await db.kvGet(`cover:${t.id}`).catch(() => null)) || null;
+    if (!blob && t.hasPic) {
       const tags = await readTags(await getFile(t.id), { picture: true });
       if (tags.picture?.data?.length) blob = new Blob([tags.picture.data], { type: tags.picture.mime });
     }
@@ -234,4 +237,87 @@ export async function deleteTrack(id) {
   await db.metaDel(id).catch(() => {});
   fileHandles.delete(id); parents.delete(id); coverCache.delete(id);
   setTracks(lib.tracks.filter((x) => x.id !== id));
+}
+
+// ---------- edición (nombre de archivo, etiquetas y portada)
+
+export const isMp3 = (t) => /\.mp3$/i.test(t?.name || '');
+const extOf = (n) => (n.match(/\.[^.]+$/) || [''])[0];
+export const baseName = (t) => t.name.replace(/\.[^.]+$/, '');
+
+/** Portada guardada aparte (para M4A/FLAC… o miniaturas descargadas). blob=null la quita. */
+export async function setCoverOverride(id, blob) {
+  if (blob) await db.kvSet(`cover:${id}`, blob); else await db.kvDel(`cover:${id}`);
+  coverCache.delete(id);
+}
+
+async function exists(dir, name) {
+  try { await dir.getFileHandle(name); return true; } catch { return false; }
+}
+
+/**
+ * Cambia título/artista/álbum, nombre de archivo y portada.
+ * En MP3 todo se escribe dentro del archivo (ID3); en otros formatos se guarda aparte.
+ * changes: { title, artist, album, filename (sin extensión), picture (undefined | null | {mime,data}) }
+ * Devuelve { oldId, newId, track }.
+ */
+export async function editTrack(id, changes, { picBlob } = {}) {
+  const t = lib.byId.get(id);
+  const parent = parents.get(id), handle = fileHandles.get(id);
+  if (!t || !parent || !handle) throw new Error('Archivo no disponible');
+  if (!canDelete(t)) throw new Error('La carpeta no permite escribir. Vuelve a elegirla en Más.');
+
+  const newName = changes.filename ? safeName(changes.filename.replace(/\.[^.]+$/, '') + extOf(t.name)) : t.name;
+  const renamed = newName !== t.name;
+  if (renamed && await exists(parent, newName)) throw new Error('Ya existe un archivo con ese nombre');
+
+  const tagChanged = ['title', 'artist', 'album'].some((k) => changes[k] != null && changes[k] !== t[k]);
+  const prefix = t.id.slice(t.src.length + 1, t.id.length - t.name.length);
+  const newId = `${t.src}:${prefix}${newName}`;
+  const file = await handle.getFile();
+  let newHandle;
+
+  if (isMp3(t) && (tagChanged || changes.picture !== undefined)) {
+    const blob = await writeTags(file, changes);
+    newHandle = await parent.getFileHandle(newName, { create: true });
+    const w = await newHandle.createWritable();
+    await w.write(blob);
+    await w.close();
+    if (renamed) await parent.removeEntry(t.name);
+  } else if (renamed) {
+    try {
+      if (typeof handle.move !== 'function') throw new Error('sin move');
+      await handle.move(newName);
+      newHandle = await parent.getFileHandle(newName);
+    } catch {
+      newHandle = await parent.getFileHandle(newName, { create: true });
+      const w = await newHandle.createWritable();
+      await w.write(file);
+      await w.close();
+      await parent.removeEntry(t.name);
+    }
+  } else newHandle = handle;
+
+  // datos guardados aparte (formatos sin ID3, portadas personalizadas)
+  const ovr = { ...(overrides[id] || {}) };
+  if (!isMp3(t)) for (const k of ['title', 'artist', 'album']) if (changes[k] != null) ovr[k] = changes[k];
+  delete overrides[id];
+  if (Object.keys(ovr).length) overrides[newId] = ovr;
+  await db.kvSet('overrides', overrides).catch(() => {});
+  const oldCover = await db.kvGet(`cover:${id}`).catch(() => null);
+  if (renamed) await db.kvDel(`cover:${id}`).catch(() => {});
+  if (!isMp3(t) && changes.picture !== undefined) await setCoverOverride(newId, picBlob || null);
+  else if (isMp3(t) && changes.picture !== undefined) await setCoverOverride(newId, null);
+  else if (renamed && oldCover) await db.kvSet(`cover:${newId}`, oldCover);
+
+  const nf = await newHandle.getFile();
+  const m = { ...makeMeta(newId, nf, await readTags(nf), newName), ...ovr };
+  if (!isMp3(t) && oldCover && changes.picture === undefined) m.hasPic = t.hasPic;
+  await db.metaDel(id).catch(() => {});
+  await db.metaPutMany([m]).catch(() => {});
+  fileHandles.delete(id); parents.delete(id); coverCache.delete(id); coverCache.delete(newId);
+  fileHandles.set(newId, newHandle); parents.set(newId, parent);
+  const track = { ...m, folder: t.folder, name: newName, src: t.src };
+  setTracks([...lib.tracks.filter((x) => x.id !== id), track]);
+  return { oldId: id, newId, track };
 }

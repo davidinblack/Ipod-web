@@ -27,6 +27,7 @@ import os
 import re
 import shutil
 import socket
+import subprocess
 import tempfile
 import threading
 import time
@@ -66,7 +67,31 @@ HAS_FFMPEG = shutil.which("ffmpeg") is not None
 # ------------------------------------------------------------------ descargas
 
 def public(job):
-    return {k: job.get(k) for k in ("id", "status", "stage", "progress", "title", "error")}
+    out = {k: job.get(k) for k in ("id", "status", "stage", "progress", "title", "error")}
+    out["cover"] = bool(job.get("cover"))
+    return out
+
+
+def square_cover(src, out):
+    """Recorta la miniatura (16:9) a un cuadrado centrado de máx. 800 px, como portada de disco."""
+    dst = os.path.join(out, "portada.jpg")
+    r = subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", src, "-vf",
+                        "crop='min(iw,ih)':'min(iw,ih)',scale='min(800,iw)':-1", "-q:v", "3", dst],
+                       capture_output=True)
+    return dst if r.returncode == 0 and os.path.exists(dst) else None
+
+
+def embed_cover(mp3, jpg):
+    """Incrusta la portada en el MP3 (ID3v2.3, tipo «portada frontal»)."""
+    tmp = mp3 + ".tmp.mp3"
+    r = subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", mp3, "-i", jpg,
+                        "-map", "0:a", "-map", "1:v", "-c", "copy", "-id3v2_version", "3",
+                        "-metadata:s:v", "title=Album cover", "-metadata:s:v", "comment=Cover (front)",
+                        tmp], capture_output=True)
+    if r.returncode == 0:
+        os.replace(tmp, mp3)
+    elif os.path.exists(tmp):
+        os.remove(tmp)
 
 
 def run_job(job):
@@ -107,15 +132,8 @@ def run_job(job):
             {"key": "FFmpegThumbnailsConvertor", "format": "jpg", "when": "before_dl"},
             {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": QUALITY},
             {"key": "FFmpegMetadata", "add_metadata": True, "add_chapters": False},
-            {"key": "EmbedThumbnail"},
         ],
         **({"cookiefile": COOKIES} if COOKIES and os.path.exists(COOKIES) else {}),
-        # recorta la miniatura 16:9 a un cuadrado, como una portada de disco
-        "postprocessor_args": {
-            "thumbnailsconvertor+ffmpeg_o": [
-                "-c:v", "mjpeg", "-vf", "crop='if(gt(ih,iw),iw,ih)':'if(gt(iw,ih),ih,iw)'",
-            ],
-        },
     }
 
     try:
@@ -126,8 +144,16 @@ def run_job(job):
         mp3s = [f for f in os.listdir(out) if f.lower().endswith(".mp3")]
         if not mp3s:
             raise RuntimeError("No se generó el audio (¿video en vivo, privado o demasiado largo?)")
+        jpgs = [f for f in os.listdir(out) if f.lower().endswith((".jpg", ".jpeg"))]
+        if jpgs:
+            job["stage"] = "converting"
+            square = square_cover(os.path.join(out, jpgs[0]), out)
+            if square:
+                embed_cover(os.path.join(out, mp3s[0]), square)
+                jpgs = [os.path.basename(square)]
         job.update(
             file=os.path.join(out, mp3s[0]), filename=mp3s[0],
+            cover=os.path.join(out, jpgs[0]) if jpgs else None,
             title=info.get("title") or job.get("title"),
             status="done", stage="done", progress=100,
         )
@@ -239,6 +265,19 @@ class Handler(SimpleHTTPRequestHandler):
                 if job["status"] != "done" or not os.path.exists(job.get("file", "")):
                     return self.send_json(409, {"error": "Aún no está listo"})
                 return self.send_file(job)
+            if len(parts) == 4 and parts[3] == "cover":
+                cover = job.get("cover")
+                if not cover or not os.path.exists(cover):
+                    return self.send_json(404, {"error": "Sin imagen"})
+                with open(cover, "rb") as f:
+                    data = f.read()
+                self.send_response(200)
+                self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(data)
+                return None
         return self.send_json(404, {"error": "No encontrado"})
 
     def send_file(self, job):

@@ -49,8 +49,17 @@ ipod/
 | Barra de pestañas | Tocar la pestaña activa | Volver al inicio de esa pestaña |
 | Ahora suena | Tocar la portada | Mostrar barra de posición, repetir y aleatorio |
 | Ahora suena | Deslizar la portada ← / → | Siguiente / anterior |
-| Ahora suena | Botón de la esquina | Ver la cola de reproducción (toca una para saltar) |
+| Ahora suena | Mantener presionada la portada | Opciones de la canción (editar, añadir a lista…) |
+| Ahora suena | Botón de la esquina | Ver la lista que suena con su portada y la canción actual marcada; ✎ para editar |
+| Álbum / lista | Reproducir · Mezclar · Editar | Editar cambia el nombre y la imagen (del álbum: se aplica a todas sus canciones) |
 | Ahora suena | Botón ‹ o «atrás» de Android | Volver a las listas |
+
+**Modo horizontal:** en «Ahora suena» y en las vistas de álbum o lista, la portada queda a la izquierda y las canciones a la derecha.
+
+**Editar una canción** (mantener presionada › Editar canción…, o ✎ en «Ahora suena»): título, artista, álbum,
+nombre del archivo e imagen. En MP3 los cambios se escriben dentro del archivo (etiquetas ID3), así que se ven
+también en otros reproductores. En otros formatos el nombre del archivo cambia y el título/imagen se guardan en la app.
+La imagen se recorta en cuadrado a 800 px.
 
 En la computadora: espacio (pausa), ← / → (anterior / siguiente) y Esc (volver).
 
@@ -81,9 +90,11 @@ El token se guarda sólo en ese teléfono y sólo da acceso a este repositorio; 
 ### Cómo funciona una descarga
 
 1. La app lanza el workflow **Descargar de YouTube** con el enlace.
-2. GitHub instala yt-dlp + ffmpeg, convierte a MP3 (160 kbps, máx. 70 min) con título, artista y portada,
-   y lo deja en la rama `descargas`.
-3. La app lo baja, lo guarda en tu carpeta (`YouTube/`) y lo borra de la rama. La rama se reescribe en un
+2. GitHub instala yt-dlp + ffmpeg, convierte a MP3 (160 kbps, máx. 70 min) con título y artista,
+   recorta la miniatura del video en cuadrado, la incrusta como portada y deja el MP3 y la imagen (`.jpg`)
+   en la rama `descargas`.
+3. La app baja ambos, guarda el MP3 en tu carpeta (`YouTube/`) con la imagen incluida y los borra de la rama.
+   Al terminar te ofrece **Editar nombre e imagen…** por si quieres corregir el título o usar otra portada. La rama se reescribe en un
    solo commit y se limpia sola a las 24 h, para no acumular música en el repositorio público.
 
 Tarda 1–2 minutos por canción. También se puede lanzar a mano: **Actions › Descargar de YouTube › Run workflow**.

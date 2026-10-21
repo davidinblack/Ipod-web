@@ -45,8 +45,9 @@ sys.path.insert(0, os.path.join(ROOT, "server"))
 import server  # noqa: E402
 
 meta = {"id": req_id, "url": url, "created": int(time.time()), "status": "error",
-        "title": None, "filename": None, "error": None}
+        "title": None, "filename": None, "error": None, "cover": False}
 mp3 = None
+cover = None
 
 if not server.YT_RE.match(url):
     meta["error"] = "Sólo se aceptan enlaces de YouTube"
@@ -63,7 +64,8 @@ else:
             meta["error"] = "El audio es demasiado grande para GitHub (máx. ~95 MB)"
         else:
             mp3 = job["file"]
-            meta.update(status="done", filename=job["filename"], size=size)
+            cover = job.get("cover")
+            meta.update(status="done", filename=job["filename"], size=size, cover=bool(cover))
 
 if meta["error"] and "Sign in to confirm" in meta["error"]:
     meta["error"] = "YouTube bloqueó a GitHub. Agrega el secreto YT_COOKIES (ver README)."
@@ -108,12 +110,14 @@ def publish():
                 created = 0
             if now - created > KEEP_SECONDS:
                 base = j[:-5]
-                for f in (j, base + ".mp3"):
+                for f in (j, base + ".mp3", base + ".jpg"):
                     if os.path.exists(f):
                         os.remove(f)
 
         if mp3:
             shutil.copy(mp3, os.path.join(pub, f"{req_id}.mp3"))
+        if cover:
+            shutil.copy(cover, os.path.join(pub, f"{req_id}.jpg"))
         with open(os.path.join(pub, f"{req_id}.json"), "w") as f:
             json.dump(meta, f, ensure_ascii=False)
         with open(os.path.join(pub, "README.md"), "w") as f:

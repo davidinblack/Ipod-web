@@ -12,6 +12,7 @@ export const P = {
   queue: [], original: [], index: -1,
   shuffle: false, repeat: 'off', // off | one | all
   track: null, art: null,
+  context: null, // { type: 'album'|'playlist'|'list', key, title } — de dónde salió la cola
 };
 
 const listeners = new Set();
@@ -30,9 +31,10 @@ function shuffled(a) {
 
 // ---------- cola
 
-export function playList(ids, start = 0, { shuffle = P.shuffle } = {}) {
+export function playList(ids, start = 0, { shuffle = P.shuffle, context = null } = {}) {
   ids = ids.filter((id) => lib.byId.has(id));
   if (!ids.length) return;
+  P.context = context;
   start = Math.min(Math.max(0, start), ids.length - 1);
   P.original = ids.slice();
   if (shuffle) {
@@ -44,6 +46,22 @@ export function playList(ids, start = 0, { shuffle = P.shuffle } = {}) {
     P.index = start;
   }
   return loadIndex(P.index, true);
+}
+
+/** Un archivo cambió de nombre o de contenido: actualiza la cola y recarga si es el actual. */
+export async function replaceId(oldId, newId, playing = !audio.paused) {
+  P.queue = P.queue.map((x) => (x === oldId ? newId : x));
+  P.original = P.original.map((x) => (x === oldId ? newId : x));
+  if (P.track && (P.track.id === oldId || P.track.id === newId)) {
+    const t = audio.currentTime || 0;
+    await loadIndex(P.index, playing, t);
+  } else emit('queue');
+  saveState();
+}
+
+/** Recarga sólo la portada/datos de la pista actual (tras editar otra cosa). */
+export function refreshArt() {
+  if (P.track) { P.track = lib.byId.get(P.track.id) || P.track; loadArt(P.track, token); emit('track'); }
 }
 
 export function jump(i) {
@@ -203,7 +221,7 @@ export function saveState() {
   try {
     localStorage.setItem('ipod.player', JSON.stringify({
       queue: P.queue, original: P.original, index: P.index,
-      time: audio.currentTime || 0, shuffle: P.shuffle, repeat: P.repeat, volume: audio.volume,
+      time: audio.currentTime || 0, shuffle: P.shuffle, repeat: P.repeat, volume: audio.volume, context: P.context,
     }));
   } catch {}
 }
@@ -214,6 +232,7 @@ export async function restoreState() {
   if (!s) return;
   P.shuffle = !!s.shuffle;
   P.repeat = s.repeat || 'off';
+  P.context = s.context || null;
   if (typeof s.volume === 'number') audio.volume = s.volume;
   const curId = s.queue?.[s.index];
   if (!curId || !lib.byId.has(curId) || P.track) return;

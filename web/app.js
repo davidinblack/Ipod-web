@@ -37,6 +37,8 @@ const I = {
   yt: '<svg viewBox="0 0 24 24"><path d="M12 3v11.2l4.2-4.2 2.1 2.1L12 18.4l-6.3-6.3L7.8 10l4.2 4.2V3zM4 19h16v2H4z"/></svg>',
   folder: '<svg viewBox="0 0 24 24"><path d="M2 5h8l2 2h10v13H2z"/></svg>',
   gear: '<svg viewBox="0 0 24 24"><path d="M10 2h4l.6 2.8 1.9.8 2.4-1.6 2.8 2.8-1.6 2.4.8 1.9L23 10v4l-2.8.6-.8 1.9 1.6 2.4-2.8 2.8-2.4-1.6-1.9.8L14 23h-4l-.6-2.8-1.9-.8-2.4 1.6-2.8-2.8 1.6-2.4-.8-1.9L1 14v-4l2.8-.6.8-1.9L3 5.1 5.8 2.3l2.4 1.6 1.9-.8zM12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"/></svg>',
+  speaker: '<svg viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3zM15 8.5a5 5 0 0 1 0 7l-1.4-1.4a3 3 0 0 0 0-4.2zM17.8 5.7a9 9 0 0 1 0 12.6l-1.4-1.4a7 7 0 0 0 0-9.8z"/></svg>',
+  pencil: '<svg viewBox="0 0 24 24"><path d="M15.5 4.5l4 4L8 20H4v-4zM17 3l1.5-1.5a1.4 1.4 0 0 1 2 0l2 2a1.4 1.4 0 0 1 0 2L21 7z"/></svg>',
   clock: '<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm-1 4v7l5 3 1-1.7-4-2.4V6z"/></svg>',
 };
 
@@ -155,20 +157,25 @@ function sectionize(rows, keyFn) {
 
 // miniaturas de portadas (se cargan cuando entran en pantalla)
 const thumbCache = new Map();
-async function thumbURL(t) {
-  if (thumbCache.has(t.id)) return thumbCache.get(t.id);
+async function coverURL(t, size = 112) {
+  const key = `${t.id}@${size}`;
+  if (thumbCache.has(key)) return thumbCache.get(key);
   const p = (async () => {
     const blob = await L.getCoverBlob(t);
     if (!blob) return null;
     const bmp = await createImageBitmap(blob);
     const s = Math.min(bmp.width, bmp.height), c = document.createElement('canvas');
-    c.width = c.height = 112;
-    c.getContext('2d').drawImage(bmp, (bmp.width - s) / 2, (bmp.height - s) / 2, s, s, 0, 0, 112, 112);
+    c.width = c.height = Math.min(size, s);
+    c.getContext('2d').drawImage(bmp, (bmp.width - s) / 2, (bmp.height - s) / 2, s, s, 0, 0, c.width, c.height);
     bmp.close?.();
-    return new Promise((r) => c.toBlob((b) => r(b ? URL.createObjectURL(b) : null), 'image/jpeg', 0.85));
+    return new Promise((r) => c.toBlob((b) => r(b ? URL.createObjectURL(b) : null), 'image/jpeg', 0.86));
   })().catch(() => null);
-  thumbCache.set(t.id, p);
+  thumbCache.set(key, p);
   return p;
+}
+const thumbURL = (t) => coverURL(t, 112);
+function forgetCovers(...ids) {
+  for (const k of [...thumbCache.keys()]) if (ids.some((id) => k.startsWith(`${id}@`))) thumbCache.delete(k);
 }
 const thumbIO = new IntersectionObserver((entries) => {
   for (const e of entries) {
@@ -185,12 +192,14 @@ const thumbIO = new IntersectionObserver((entries) => {
 }, { rootMargin: '200px' });
 
 function rowHTML(r, i) {
-  const cls = ['row', r.sub ? 'two' : '', r.cover !== undefined ? 'album' : '', r.info ? 'info' : '', r.center ? 'center' : ''].join(' ');
+  const cls = ['row', r.sub ? 'two' : '', r.cover !== undefined ? 'album' : '', r.info ? 'info' : '', r.center ? 'center' : '', r.playing ? 'playing' : ''].join(' ');
   return `<div class="${cls}" data-i="${i}">`
+    + (r.lead !== undefined ? `<span class="lead">${r.playing ? I.speaker : esc(r.lead ?? '')}</span>` : '')
     + (r.cover !== undefined ? `<div class="thumb" data-cover="${esc(r.cover || '')}">${I.note}</div>` : '')
     + (r.icon ? `<span class="ico">${r.icon}</span>` : '')
     + `<div class="txt"><div class="t">${esc(r.title)}</div>${r.sub ? `<div class="s">${esc(r.sub)}</div>` : ''}</div>`
     + (r.num != null ? `<span class="num">${esc(r.num)}</span>` : '')
+    + (r.playing && r.lead === undefined ? `<span class="spk">${I.speaker}</span>` : '')
     + (r.value != null ? `<span class="val">${esc(r.value)}</span>` : '')
     + (r.toggle != null ? `<span class="switch${r.toggle ? ' on' : ''}"><b><i></i></b></span>` : '')
     + (r.chev ? '<span class="chev"></span>' : '')
@@ -225,6 +234,7 @@ function renderTable(el, def) {
   el.innerHTML = `<div class="table${def.indexed ? ' indexed' : ''}">${html}</div>`;
   el.classList.toggle('grouped', !!def.grouped);
   el._rows = rows;
+  el.classList.add('rowhost');
   el.querySelectorAll('[data-cover]').forEach((n) => { if (n.dataset.cover) thumbIO.observe(n); });
 
   if (def.indexed && total > 14) {
@@ -251,13 +261,13 @@ function bindRows(el) {
   el.addEventListener('click', (e) => {
     if (held) { held = false; return; }
     const row = e.target.closest('.row[data-i]');
-    const r = row && el._rows?.[+row.dataset.i];
+    const r = row && row.closest('.rowhost')?._rows?.[+row.dataset.i];
     if (!r || r.info) return;
     r.onTap?.(r, row);
   });
   el.addEventListener('contextmenu', (e) => {
     const row = e.target.closest('.row[data-i]');
-    const r = row && el._rows?.[+row.dataset.i];
+    const r = row && row.closest('.rowhost')?._rows?.[+row.dataset.i];
     e.preventDefault();
     if (!r?.onHold) return;
     held = true;
@@ -373,7 +383,7 @@ const view = (title, build, extra = {}) => ({
   render(el) { renderTable(el, build()); },
 });
 
-function playTracks(ids, i = 0, opts) {
+function playTracks(ids, i = 0, opts = {}) {
   if (!ids.length) return;
   PL.playList(ids, i, opts);
   openNow();
@@ -387,13 +397,14 @@ function songsView(title, getIds, ctx = {}) {
       return {
         title: t.title, sub: ctx.album ? null : `${t.artist}${ctx.artist ? '' : ` — ${t.album}`}`,
         num: ctx.album && t.track ? t.track : null,
-        onTap: () => playTracks(ids, ids.indexOf(id)),
+        playing: id === P.track?.id,
+        onTap: () => playTracks(ids, ids.indexOf(id), { context: { type: 'list', title } }),
         onHold: () => songOptions(id, ctx),
       };
     };
     const head = ids.length > 1 ? [{
       title: 'Mezclar', icon: I.shuffle,
-      onTap: () => playTracks(ids, Math.floor(Math.random() * ids.length), { shuffle: true }),
+      onTap: () => playTracks(ids, Math.floor(Math.random() * ids.length), { shuffle: true, context: { type: 'list', title } }),
     }] : [];
     const big = !ctx.album && !ctx.playlist && ids.length > 14;
     const rows = ids.map(songRow);
@@ -405,7 +416,7 @@ function songsView(title, getIds, ctx = {}) {
         : '<b>No hay música</b>Ve a Más › Biblioteca para elegir tu carpeta de música o agregar archivos.',
       footer: ids.length > 4 ? `${ids.length} canciones` : null,
     };
-  }, ctx);
+  }, { ...ctx, live: true });
 }
 
 function artistsView() {
@@ -414,7 +425,7 @@ function artistsView() {
       title: name, chev: true,
       onTap: () => {
         const al = L.albums(name);
-        if (al.length === 1) push(songsView(al[0][0], () => L.albums(name)[0]?.[1] || [], { album: al[0][0], artist: name, short: name }));
+        if (al.length === 1) push(albumDetail(al[0][0], name, 'Artistas'));
         else push(albumsView(name));
       },
       onHold: () => addToPlaylist(ids),
@@ -433,7 +444,7 @@ function albumsView(artist) {
       const first = lib.byId.get(ids[0]);
       return {
         title: name, sub: artist ? `${ids.length} canciones` : first?.artist, cover: ids.find((id) => lib.byId.get(id)?.hasPic) || ids[0], chev: true,
-        onTap: () => push(songsView(name, () => L.albums(artist).find((a) => a[0] === name)?.[1] || [], { album: name, artist })),
+        onTap: () => push(albumDetail(name, artist)),
         onHold: () => addToPlaylist(ids),
       };
     });
@@ -457,15 +468,325 @@ function playlistsView() {
     sections: [{
       rows: [
         { title: 'Nueva lista…', icon: I.plus, onTap: newPlaylistFlow },
-        { title: 'Agregadas recientemente', icon: I.clock, chev: true, onTap: () => push(songsView('Recientes', recentIds, { short: 'Listas' })) },
+        { title: 'Agregadas recientemente', icon: I.clock, chev: true, onTap: () => push(recentDetail()) },
         ...playlists.map((p) => ({
           title: p.name, sub: `${p.tracks.filter((id) => lib.byId.has(id)).length} canciones`, chev: true,
-          onTap: () => push(songsView(p.name, () => p.tracks, { playlist: p })),
+          onTap: () => push(playlistDetail(p)),
           onHold: () => playlistOptions(p),
         })),
       ],
     }],
   }));
+}
+
+// --- vista de álbum / lista: portada grande + canciones, con la que suena marcada
+
+async function firstCover(ids, size) {
+  for (const id of ids) {
+    const t = lib.byId.get(id);
+    if (!t) continue;
+    const u = await coverURL(t, size);
+    if (u) return u;
+  }
+  return null;
+}
+
+/**
+ * def: { title, short, kind:'album'|'playlist'|'list', key, getIds(), cover(size) → url, subtitle, numbers, onEdit }
+ */
+function detailView(def) {
+  return {
+    title: def.title, short: def.short, live: true, detail: true,
+    render(el) {
+      const ids = def.getIds().filter((id) => lib.byId.has(id));
+      const context = { type: def.kind, key: def.key, title: def.title };
+      const cur = P.track?.id;
+      el.classList.add('detail');
+      el.innerHTML = `
+        <div class="ld">
+          <button class="ld-cover ph" aria-label="Portada">${I.note}</button>
+          <div class="ld-meta">
+            <div class="ld-title">${esc(def.title)}</div>
+            ${def.subtitle ? `<div class="ld-sub">${esc(def.subtitle)}</div>` : ''}
+            <div class="ld-count">${ids.length} ${ids.length === 1 ? 'canción' : 'canciones'}</div>
+            <div class="ld-btns">
+              <button class="ld-btn" data-a="play"${ids.length ? '' : ' disabled'}>${I.play}<span>Reproducir</span></button>
+              <button class="ld-btn" data-a="shuffle"${ids.length > 1 ? '' : ' disabled'}>${I.shuffle}<span>Mezclar</span></button>
+              ${def.onEdit ? `<button class="ld-btn" data-a="edit">${I.pencil}<span>Editar</span></button>` : ''}
+            </div>
+          </div>
+          <div class="ld-list"></div>
+        </div>`;
+      const list = el.querySelector('.ld-list');
+      renderTable(list, {
+        sections: [{
+          rows: ids.map((id, i) => {
+            const t = lib.byId.get(id);
+            return {
+              title: t.title,
+              sub: def.kind === 'album' ? null : `${t.artist} — ${t.album}`,
+              lead: def.numbers && t.track ? t.track : i + 1,
+              playing: id === cur,
+              onTap: () => playTracks(ids, i, { shuffle: false, context }),
+              onHold: () => songOptions(id, def.kind === 'playlist' ? { playlist: def.playlist } : {}),
+            };
+          }),
+        }],
+        empty: def.kind === 'playlist'
+          ? '<b>Lista vacía</b>Mantén presionada una canción y elige «Añadir a una lista».'
+          : '<b>Sin canciones</b>',
+      });
+      el.querySelector('.ld-btns').addEventListener('click', (e) => {
+        const a = e.target.closest('[data-a]')?.dataset.a;
+        if (a === 'play') playTracks(ids, 0, { shuffle: false, context });
+        else if (a === 'shuffle') playTracks(ids, Math.floor(Math.random() * ids.length), { shuffle: true, context });
+        else if (a === 'edit') def.onEdit();
+      });
+      const cov = el.querySelector('.ld-cover');
+      cov.onclick = () => def.onEdit?.();
+      Promise.resolve(def.cover(600)).then((url) => {
+        if (!url || !cov.isConnected) return;
+        cov.classList.remove('ph');
+        cov.innerHTML = '';
+        cov.style.backgroundImage = `url("${url}")`;
+      });
+      // deja visible la canción que suena
+      const playing = list.querySelector('.row.playing');
+      if (playing && !this._scrolled) { this._scrolled = true; requestAnimationFrame(() => playing.scrollIntoView({ block: 'nearest' })); }
+    },
+  };
+}
+
+const albumIds = (name, artist) => L.albums(artist).find((a) => a[0] === name)?.[1] || [];
+
+function albumDetail(name, artist, short) {
+  return detailView({
+    title: name, short: short || (artist ? artist : 'Álbumes'), kind: 'album', key: `${artist || ''}\u0001${name}`, numbers: true,
+    subtitle: artist || lib.byId.get(albumIds(name, artist)[0])?.artist,
+    getIds: () => albumIds(name, artist),
+    cover: (size) => firstCover(albumIds(name, artist).filter((id) => lib.byId.get(id)?.hasPic).concat(albumIds(name, artist)), size),
+    onEdit: () => editAlbum(name, artist),
+  });
+}
+
+function playlistDetail(p) {
+  return detailView({
+    title: p.name, short: 'Listas', kind: 'playlist', key: p.id, playlist: p, subtitle: 'Lista de reproducción',
+    getIds: () => p.tracks,
+    cover: (size) => p.image || firstCover(p.tracks, size),
+    onEdit: () => editPlaylist(p),
+  });
+}
+
+function recentDetail() {
+  return detailView({
+    title: 'Agregadas recientemente', short: 'Listas', kind: 'list', key: 'recent', subtitle: 'Lista automática',
+    getIds: recentIds, cover: (size) => firstCover(recentIds(), size),
+  });
+}
+
+/** Portada del contexto de reproducción (álbum o lista) para «Ahora suena». */
+function contextCover(size = 200) {
+  const c = P.context;
+  if (c?.type === 'playlist') {
+    const p = playlists.find((x) => x.id === c.key);
+    if (p) return Promise.resolve(p.image || firstCover(p.tracks, size));
+  }
+  return P.track ? coverURL(P.track, size) : Promise.resolve(null);
+}
+
+// --- editor (canción, álbum, lista)
+
+const imgPick = h('<input type="file" accept="image/*" hidden>');
+document.body.appendChild(imgPick);
+
+function pickImage() {
+  return new Promise((resolve) => {
+    imgPick.value = '';
+    const done = () => { imgPick.onchange = imgPick.oncancel = null; resolve(imgPick.files?.[0] || null); };
+    imgPick.onchange = done;
+    imgPick.oncancel = done;
+    imgPick.click();
+  });
+}
+
+/** Recorta al centro en cuadrado (máx. 800 px) y devuelve JPEG listo para incrustar. */
+async function prepareImage(file) {
+  const bmp = await createImageBitmap(file);
+  const s = Math.min(bmp.width, bmp.height), size = Math.min(800, s);
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  c.getContext('2d').drawImage(bmp, (bmp.width - s) / 2, (bmp.height - s) / 2, s, s, 0, 0, size, size);
+  bmp.close?.();
+  const blob = await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.88));
+  return { blob, mime: 'image/jpeg', data: new Uint8Array(await blob.arrayBuffer()), url: URL.createObjectURL(blob) };
+}
+
+const blobToDataURL = (blob) => new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
+
+/**
+ * Hoja de edición a pantalla completa.
+ * opts: { title, cover (url|null), fields:[{key,label,value,suffix,placeholder}], note }
+ * → null si se cancela, o { values, picture } (picture: undefined sin cambios · null quitar · {blob,mime,data})
+ */
+function editor({ title, cover, fields, note, imageNote }) {
+  return new Promise((resolve) => {
+    let picture;
+    const el = h(`<div class="ed">
+      <header class="navbar ed-bar">
+        <button class="ed-btn" data-a="cancel">Cancelar</button>
+        <h1>${esc(title)}</h1>
+        <button class="ed-btn main" data-a="save">Guardar</button>
+      </header>
+      <div class="ed-body">
+        <div class="ed-cover">
+          <button class="ed-img${cover ? '' : ' ph'}" data-a="pick">${cover ? '' : I.note}</button>
+          <div class="ed-imgbtns">
+            <button class="ed-small" data-a="pick">Cambiar imagen…</button>
+            <button class="ed-small" data-a="clear">Quitar imagen</button>
+          </div>
+        </div>
+        ${imageNote ? `<div class="g-note">${esc(imageNote)}</div>` : ''}
+        <div class="group">
+          ${fields.map((f) => `<label class="row ed-row"><span class="ed-l">${esc(f.label)}</span>
+            <input data-k="${f.key}" value="${esc(f.value ?? '')}" placeholder="${esc(f.placeholder || '')}" autocomplete="off" autocapitalize="sentences" spellcheck="false">
+            ${f.suffix ? `<span class="ed-suf">${esc(f.suffix)}</span>` : ''}</label>`).join('')}
+        </div>
+        ${note ? `<div class="g-note">${esc(note)}</div>` : ''}
+      </div>
+    </div>`);
+    const img = el.querySelector('.ed-img');
+    if (cover) img.style.backgroundImage = `url("${cover}")`;
+    const close = (result) => { el.classList.add('closing'); setTimeout(() => el.remove(), 250); resolve(result); };
+    el.addEventListener('click', async (e) => {
+      const a = e.target.closest('[data-a]')?.dataset.a;
+      if (a === 'cancel') close(null);
+      else if (a === 'save') {
+        const values = {};
+        el.querySelectorAll('input[data-k]').forEach((i) => { values[i.dataset.k] = i.value.trim(); });
+        close({ values, picture });
+      } else if (a === 'pick') {
+        const f = await pickImage();
+        if (!f) return;
+        try {
+          picture = await prepareImage(f);
+          img.classList.remove('ph'); img.innerHTML = '';
+          img.style.backgroundImage = `url("${picture.url}")`;
+        } catch { toast('No se pudo abrir la imagen'); }
+      } else if (a === 'clear') {
+        picture = null;
+        img.classList.add('ph'); img.style.backgroundImage = ''; img.innerHTML = I.note;
+      }
+    });
+    layer.appendChild(el);
+  });
+}
+
+function migrateId(oldId, newId) {
+  if (oldId === newId) return;
+  playlists.forEach((p) => { p.tracks = p.tracks.map((x) => (x === oldId ? newId : x)); });
+}
+
+async function editSong(id) {
+  const t = lib.byId.get(id);
+  if (!t) return;
+  if (!L.canDelete(t)) {
+    await alertBox({ title: 'Sólo lectura', message: 'No hay permiso para modificar esta carpeta. Vuelve a elegirla en Más › Biblioteca.' });
+    return;
+  }
+  const ext = (t.name.match(/\.[^.]+$/) || [''])[0];
+  const r = await editor({
+    title: 'Editar canción', cover: await coverURL(t, 600),
+    fields: [
+      { key: 'title', label: 'Título', value: t.title },
+      { key: 'artist', label: 'Artista', value: t.artist },
+      { key: 'album', label: 'Álbum', value: t.album },
+      { key: 'filename', label: 'Archivo', value: L.baseName(t), suffix: ext },
+    ],
+    note: L.isMp3(t) ? 'Los cambios se guardan dentro del archivo MP3.' : 'En este formato el título y la imagen se guardan en la app; el nombre del archivo sí se cambia.',
+  });
+  if (!r) return;
+  const changes = {};
+  for (const k of ['title', 'artist', 'album']) if (r.values[k] && r.values[k] !== t[k]) changes[k] = r.values[k];
+  if (r.values.filename && r.values.filename !== L.baseName(t)) changes.filename = r.values.filename;
+  if (r.picture !== undefined) changes.picture = r.picture ? { mime: r.picture.mime, data: r.picture.data } : null;
+  if (!Object.keys(changes).length) return;
+  const hud = progressHud('Guardando…');
+  hud.set(0.4);
+  const isCur = P.track?.id === id, wasPlaying = isCur && !audio.paused;
+  try {
+    if (isCur) audio.pause();
+    const { oldId, newId } = await L.editTrack(id, changes, { picBlob: r.picture?.blob });
+    migrateId(oldId, newId);
+    savePlaylists();
+    forgetCovers(oldId, newId);
+    await PL.replaceId(oldId, newId, wasPlaying);
+    hud.close();
+    toast('Guardado');
+  } catch (e) {
+    hud.close();
+    if (wasPlaying) audio.play().catch(() => {});
+    await alertBox({ title: 'No se pudo guardar', message: e.message });
+  }
+  refreshAll();
+}
+
+async function editAlbum(name, artist) {
+  const ids = albumIds(name, artist);
+  if (!ids.length) return;
+  const locked = ids.filter((id) => !L.canDelete(lib.byId.get(id)));
+  if (locked.length) {
+    await alertBox({ title: 'Sólo lectura', message: 'No hay permiso para modificar esta carpeta. Vuelve a elegirla en Más › Biblioteca.' });
+    return;
+  }
+  const r = await editor({
+    title: 'Editar álbum', cover: await firstCover(ids, 600),
+    fields: [{ key: 'album', label: 'Álbum', value: name }],
+    imageNote: `La imagen y el nombre se aplican a las ${ids.length} canciones del álbum.`,
+  });
+  if (!r) return;
+  const changes = {};
+  if (r.values.album && r.values.album !== name) changes.album = r.values.album;
+  if (r.picture !== undefined) changes.picture = r.picture ? { mime: r.picture.mime, data: r.picture.data } : null;
+  if (!Object.keys(changes).length) return;
+  const hud = progressHud('Guardando álbum…');
+  const curIn = ids.includes(P.track?.id), wasPlaying = curIn && !audio.paused;
+  if (curIn) audio.pause();
+  let fails = 0;
+  for (let i = 0; i < ids.length; i++) {
+    hud.set(i / ids.length, null, lib.byId.get(ids[i])?.title || '');
+    try {
+      const { oldId, newId } = await L.editTrack(ids[i], changes, { picBlob: r.picture?.blob });
+      migrateId(oldId, newId);
+      forgetCovers(oldId, newId);
+      await PL.replaceId(oldId, newId, wasPlaying);
+    } catch (e) { fails++; console.warn(e); }
+  }
+  savePlaylists();
+  hud.close();
+  toast(fails ? `Guardado (${fails} con error)` : 'Álbum guardado');
+  if (changes.album && top().detail) {
+    stack()[stack().length - 1] = albumDetail(changes.album, artist, top().short);
+    showTop();
+  }
+  refreshAll();
+}
+
+async function editPlaylist(p) {
+  const r = await editor({
+    title: 'Editar lista', cover: p.image || await firstCover(p.tracks, 600),
+    fields: [{ key: 'name', label: 'Nombre', value: p.name }],
+    imageNote: 'Si no eliges una imagen se usa la portada de la primera canción.',
+  });
+  if (!r) return;
+  if (r.values.name) p.name = r.values.name;
+  if (r.picture === null) delete p.image;
+  else if (r.picture) p.image = await blobToDataURL(r.picture.blob);
+  playlists.sort((a, b) => L.cmp(a.name, b.name));
+  savePlaylists();
+  if (top().detail) { stack()[stack().length - 1] = playlistDetail(p); showTop(); }
+  refreshAll();
+  if (P.context?.key === p.id) { P.context.title = p.name; syncNow(); }
 }
 
 // --- acciones
@@ -474,13 +795,15 @@ async function songOptions(id, ctx = {}) {
   const t = lib.byId.get(id);
   if (!t) return;
   const opts = [
+    { label: 'Editar canción…', value: 'edit' },
     { label: 'Reproducir a continuación', value: 'next' },
     { label: 'Añadir a una lista…', value: 'add' },
   ];
   if (ctx.playlist) opts.push({ label: 'Quitar de esta lista', value: 'remove' });
   if (L.canDelete(t)) opts.push({ label: 'Eliminar archivo', value: 'delete', red: true });
   const a = await actionSheet(`${t.title} — ${t.artist}`, opts);
-  if (a === 'next') { PL.playNext(id); toast('A continuación'); updateNav(); }
+  if (a === 'edit') await editSong(id);
+  else if (a === 'next') { PL.playNext(id); toast('A continuación'); updateNav(); }
   else if (a === 'add') await addToPlaylist([id]);
   else if (a === 'remove') {
     ctx.playlist.tracks = ctx.playlist.tracks.filter((x) => x !== id);
@@ -537,15 +860,12 @@ async function addToPlaylist(ids) {
 async function playlistOptions(p) {
   const a = await actionSheet(p.name, [
     { label: 'Mezclar', value: 'shuffle' },
-    { label: 'Cambiar nombre…', value: 'rename' },
+    { label: 'Editar nombre e imagen…', value: 'edit' },
     { label: 'Eliminar lista', value: 'delete', red: true },
   ]);
   const ids = p.tracks.filter((id) => lib.byId.has(id));
-  if (a === 'shuffle' && ids.length) playTracks(ids, Math.floor(Math.random() * ids.length), { shuffle: true });
-  else if (a === 'rename') {
-    const name = await prompt('Cambiar nombre', { value: p.name, ok: 'Guardar' });
-    if (name) { p.name = name; savePlaylists(); refresh(); }
-  } else if (a === 'delete') {
+  if (a === 'shuffle' && ids.length) playTracks(ids, Math.floor(Math.random() * ids.length), { shuffle: true, context: { type: 'playlist', key: p.id, title: p.name } });
+  else if (a === 'edit') await editPlaylist(p); else if (a === 'delete') {
     const r = await alertBox({ title: `¿Eliminar «${p.name}»?`, message: 'Las canciones no se borran.', buttons: [{ label: 'Cancelar', value: false }, { label: 'Eliminar', main: true, value: true }] });
     if (r.value) { playlists = playlists.filter((x) => x !== p); savePlaylists(); refresh(); }
   }
@@ -718,8 +1038,10 @@ async function serverDownload(url, s) {
   setProgress(s, 0.95, 'Guardando…');
   const res = await api(`/api/jobs/${job.id}/file`);
   const blob = await res.blob();
+  let cover = null;
+  if (st.cover) { try { cover = await (await api(`/api/jobs/${job.id}/cover`)).blob(); } catch {} }
   api(`/api/jobs/${job.id}`, { method: 'DELETE' }).catch(() => {});
-  return { blob, filename: filenameFrom(res) || `${st.title || 'audio'}.mp3` };
+  return { blob, cover, filename: filenameFrom(res) || `${st.title || 'audio'}.mp3` };
 }
 
 // GitHub Actions (.github/workflows/youtube.yml)
@@ -727,8 +1049,8 @@ const RAW = 'application/vnd.github.raw+json';
 const OBJ = 'application/vnd.github.object+json';
 
 async function gh(path, opts = {}, accept = 'application/vnd.github+json') {
-  if (!settings.repo) throw new Error('Falta el repositorio (Ajustes › Descargas)');
-  if (!settings.ghToken) throw new Error('Falta el token de GitHub (Ajustes › Descargas)');
+  if (!settings.repo) throw new Error('Falta el repositorio (Más › Configurar descargas)');
+  if (!settings.ghToken) throw new Error('Falta el token de GitHub (Más › Configurar descargas)');
   let res;
   try {
     res = await fetch(`https://api.github.com/repos/${settings.repo}${path}`, {
@@ -788,13 +1110,17 @@ async function ghDownload(url, s) {
   if (meta.status !== 'done') { ghCleanup(id); throw new Error(meta.error || 'Falló la descarga'); }
   if (meta.title) setProgress(s, 0.9, null, meta.title);
   const buf = await (await gh(`/contents/${id}.mp3?ref=descargas`, {}, RAW)).arrayBuffer();
+  let cover = null;
+  if (meta.cover) {
+    try { cover = new Blob([await (await gh(`/contents/${id}.jpg?ref=descargas`, {}, RAW)).arrayBuffer()], { type: 'image/jpeg' }); } catch {}
+  }
   ghCleanup(id);
-  return { blob: new Blob([buf], { type: 'audio/mpeg' }), filename: meta.filename || `${meta.title || 'audio'}.mp3` };
+  return { blob: new Blob([buf], { type: 'audio/mpeg' }), cover, filename: meta.filename || `${meta.title || 'audio'}.mp3` };
 }
 
 // borra lo recogido de la rama (si falla, el workflow lo limpia a las 24 h)
 async function ghCleanup(id) {
-  for (const ext of ['mp3', 'json']) {
+  for (const ext of ['mp3', 'jpg', 'json']) {
     try {
       const { sha } = await (await gh(`/contents/${id}.${ext}?ref=descargas`, {}, OBJ)).json();
       await gh(`/contents/${id}.${ext}`, { method: 'DELETE', body: JSON.stringify({ message: `recogida ${id}`, sha, branch: 'descargas' }) });
@@ -837,16 +1163,26 @@ async function askUrl(initial = '') {
 async function startDownload(url) {
   const s = progressHud('Conectando…', { hideable: true });
   try {
-    const { blob, filename } = settings.mode === 'github' ? await ghDownload(url, s) : await serverDownload(url, s);
+    const { blob, filename, cover } = settings.mode === 'github' ? await ghDownload(url, s) : await serverDownload(url, s);
     s.set(0.97, 'Guardando…');
-    const t = await L.saveDownload(blob, filename);
+    let t = await L.saveDownload(blob, filename);
+    if (cover) {
+      // la portada también se guarda aparte; si el MP3 no la trae incrustada, se le agrega
+      try {
+        if (L.isMp3(t) && !t.hasPic) {
+          const data = new Uint8Array(await cover.arrayBuffer());
+          t = (await L.editTrack(t.id, { picture: { mime: 'image/jpeg', data } })).track;
+        } else if (!L.isMp3(t)) await L.setCoverOverride(t.id, cover);
+      } catch (e) { console.warn('portada', e); }
+    }
     s.close();
     refreshAll();
     const r = await alertBox({
       title: 'Descarga lista', message: `${t.title} — ${t.artist}`,
-      buttons: [{ label: 'Reproducir', main: true, value: 'play' }, { label: 'Añadir a lista…', value: 'add' }, { label: 'OK', value: 'ok' }],
+      buttons: [{ label: 'Reproducir', main: true, value: 'play' }, { label: 'Editar nombre e imagen…', value: 'edit' }, { label: 'Añadir a lista…', value: 'add' }, { label: 'OK', value: 'ok' }],
     });
-    if (r.value === 'play') playTracks([t.id], 0);
+    if (r.value === 'play') playTracks([t.id], 0, { context: { type: 'list', title: 'Descargas' } });
+    else if (r.value === 'edit') editSong(t.id);
     else if (r.value === 'add') addToPlaylist([t.id]);
   } catch (e) {
     s.close();
@@ -904,7 +1240,7 @@ function closeNow(fromHistory) {
   if (!now.classList.contains('open')) return;
   now.classList.remove('open');
   now.setAttribute('aria-hidden', 'true');
-  $('#npQueue').hidden = true;
+  now.classList.remove('show-q');
   if (!fromHistory && history.state?.now) history.back();
   updateNav();
 }
@@ -919,12 +1255,12 @@ function syncNow() {
   if (P.art) { npArt.className = 'np-art'; npArt.innerHTML = ''; npArt.style.backgroundImage = `url("${P.art}")`; }
   else { npArt.className = 'np-art ph'; npArt.style.backgroundImage = ''; npArt.innerHTML = I.note; }
   const flip = $('#npFlip');
-  if ($('#npQueue').hidden) { flip.className = 'np-flip'; flip.style.backgroundImage = P.art ? `url("${P.art}")` : ''; if (!P.art) flip.classList.add('list'); }
+  if (!now.classList.contains('show-q')) { flip.className = 'np-flip'; flip.style.backgroundImage = P.art ? `url("${P.art}")` : ''; if (!P.art) flip.classList.add('list'); }
   else { flip.className = 'np-flip list'; flip.style.backgroundImage = ''; }
   syncPlay();
   syncTime();
   syncModes();
-  if (!$('#npQueue').hidden) renderQueue();
+  if (queueVisible()) renderQueue();
 }
 
 function syncPlay() { $('#npPlay').innerHTML = audio.paused ? I.play : I.pause; }
@@ -948,13 +1284,45 @@ function syncModes() {
   setFill(npVol);
 }
 
+const queueVisible = () => now.classList.contains('show-q') || now.classList.contains('land');
+
+// la lista que está sonando, con su portada y la canción actual marcada
 function renderQueue() {
   const q = $('#npQueue');
-  q.innerHTML = P.queue.map((id, i) => {
-    const t = lib.byId.get(id);
-    return t ? `<div class="q-row${i === P.index ? ' cur' : ''}" data-q="${i}"><span class="n">${i + 1}</span><div class="x"><div>${esc(t.title)}</div><div class="a">${esc(t.artist)}</div></div></div>` : '';
-  }).join('');
-  q.querySelector('.cur')?.scrollIntoView({ block: 'center' });
+  const c = P.context;
+  const title = c?.title || 'Cola de reproducción';
+  const kind = c?.type === 'album' ? 'Álbum' : c?.type === 'playlist' ? 'Lista' : '';
+  q.innerHTML = `<div class="q-head">
+      <div class="q-cover">${I.note}</div>
+      <div class="q-meta"><div class="q-k">${kind}</div><div class="q-t">${esc(title)}</div><div class="q-s">${P.queue.length} canciones${P.shuffle ? ' · aleatorio' : ''}</div></div>
+      <button class="q-edit" data-a="edit" aria-label="Editar">${I.pencil}</button>
+    </div>`
+    + P.queue.map((id, i) => {
+      const t = lib.byId.get(id);
+      return t ? `<div class="q-row${i === P.index ? ' cur' : ''}" data-q="${i}"><span class="n">${i === P.index ? I.speaker : i + 1}</span><div class="x"><div>${esc(t.title)}</div><div class="a">${esc(t.artist)}</div></div></div>` : '';
+    }).join('');
+  contextCover(200).then((url) => {
+    const cov = q.querySelector('.q-cover');
+    if (url && cov) { cov.innerHTML = ''; cov.style.backgroundImage = `url("${url}")`; }
+  });
+  const cur = q.querySelector('.cur');
+  if (cur) requestAnimationFrame(() => { q.scrollTop = cur.offsetTop - q.clientHeight / 2 + cur.offsetHeight / 2; });
+}
+
+async function editFromNow() {
+  if (!P.track) return;
+  const c = P.context, opts = [{ label: 'Editar canción…', value: 'song' }];
+  if (c?.type === 'album' || (!c && P.track)) opts.push({ label: 'Editar álbum…', value: 'album' });
+  if (c?.type === 'playlist') opts.push({ label: 'Editar lista…', value: 'playlist' });
+  const v = await actionSheet(P.track.title, opts);
+  if (v === 'song') editSong(P.track.id);
+  else if (v === 'album') {
+    const [artist, name] = c?.type === 'album' ? c.key.split('\u0001') : ['', P.track.album];
+    editAlbum(name, artist || undefined);
+  } else if (v === 'playlist') {
+    const p = playlists.find((x) => x.id === c.key);
+    if (p) editPlaylist(p);
+  }
 }
 
 $('#npBack').onclick = () => closeNow();
@@ -964,15 +1332,24 @@ $('#npPrev').onclick = () => PL.prev();
 $('#npNext').onclick = () => PL.next();
 npArt.onclick = () => { const s = $('#npScrub'); s.hidden = !s.hidden; };
 $('#npFlip').onclick = () => {
-  const q = $('#npQueue');
-  q.hidden = !q.hidden;
-  if (!q.hidden) renderQueue();
+  now.classList.toggle('show-q');
   syncNow();
 };
 $('#npQueue').addEventListener('click', (e) => {
+  if (e.target.closest('[data-a="edit"]')) { editFromNow(); return; }
   const r = e.target.closest('[data-q]');
   if (r) PL.jump(+r.dataset.q);
 });
+npArt.addEventListener('contextmenu', (e) => { e.preventDefault(); if (P.track) songOptions(P.track.id); });
+
+// horizontal: portada a la izquierda, lista a la derecha
+const landMQ = matchMedia('(orientation: landscape) and (max-height: 600px), (orientation: landscape) and (min-width: 700px)');
+function syncLand() {
+  now.classList.toggle('land', landMQ.matches);
+  if (now.classList.contains('open') && queueVisible()) renderQueue();
+}
+landMQ.addEventListener('change', syncLand);
+syncLand();
 $('#npRepeat').onclick = () => { PL.setRepeat({ off: 'all', all: 'one', one: 'off' }[P.repeat]); syncModes(); };
 $('#npShuffle').onclick = () => { PL.setShuffle(!P.shuffle); syncModes(); toast(P.shuffle ? 'Aleatorio: Sí' : 'Aleatorio: No', 1100); };
 npSeek.addEventListener('input', () => {
@@ -1004,9 +1381,10 @@ PL.onPlayer((type) => {
   if (type === 'time') { if (now.classList.contains('open')) syncTime(); return; }
   if (type === 'state') { syncPlay(); return; }
   if (type === 'error') { toast('No se pudo leer el archivo'); return; }
-  if (type === 'queue' && !$('#npQueue').hidden) renderQueue();
+  if (type === 'queue' && queueVisible()) renderQueue();
   syncNow();
   updateNav();
+  if (type === 'track' && top()?.live) refresh();
 });
 
 // teclado (para probar en computadora)
