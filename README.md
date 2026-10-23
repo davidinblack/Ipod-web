@@ -129,10 +129,30 @@ pip install -U "yt-dlp[default]"      # además: ffmpeg y deno
 python server/server.py               # http://localhost:8787
 ```
 
-## Siguiente paso: app Android
+## App Android (APK)
 
-- **TWA (recomendado):** con [Bubblewrap](https://github.com/GoogleChromeLabs/bubblewrap) o PWABuilder generas un APK que abre tu URL en Chrome a pantalla completa. Sigue cargando el HTML desde la red, así que las actualizaciones siguen llegando solas, y conserva Media Session, carpeta local y "Compartir".
-- **Capacitor:** usa `server.url` con tu dominio para la misma idea. Te conviene si más adelante quieres plugins nativos (por ejemplo, leer toda la música del teléfono con MediaStore o un servicio en primer plano propio).
+`android/` genera un APK que abre la app web a pantalla completa con Chrome (Trusted Web Activity).
+Las actualizaciones de la app web siguen llegando solas; el APK sólo se recompila si cambia `android/`.
+
+**Instalar:** en el teléfono abre
+https://github.com/davidinblack/Ipod-web/releases/latest/download/ipod.apk
+(o **Más › Acerca de › App para Android**), ábrelo y permite «Instalar apps desconocidas» si Android lo pide.
+
+**Configuración (una sola vez):**
+1. Secretos del repositorio (**Settings › Secrets and variables › Actions**):
+   `ANDROID_KEYSTORE` (la llave en base64) y `ANDROID_KEYSTORE_PASSWORD`.
+   Guarda la llave original en un lugar seguro: sin ella no se pueden publicar actualizaciones del APK
+   que se instalen encima de la versión anterior.
+2. Pantalla completa sin barra de direcciones: crea el repositorio público `davidinblack.github.io`
+   con el contenido de `android/sitio-raiz/` (sirve `/.well-known/assetlinks.json`). Sin él, la app funciona
+   pero muestra una barra con la dirección arriba.
+3. **Actions › Compilar APK › Run workflow**. Cada ejecución crea un Release con `ipod.apk`.
+
+## Más adelante: Google Play
+
+Para publicarla en Play: otro nombre e ícono (sin «iPod», marca de Apple), una versión sin descargas de YouTube
+(van contra las políticas de Play), cuenta de desarrollador (25 USD) y prueba cerrada con 12 personas durante 14 días.
+El mismo proyecto de `android/` genera el `.aab` que pide Play.
 
 ## Notas
 

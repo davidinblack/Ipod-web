@@ -1138,6 +1138,7 @@ function moreView() {
       ] },
       { title: 'Acerca de', rows: [
         { title: 'Versión', value: bootVersion || '—', info: true },
+        { title: 'App para Android (APK)', chev: true, onTap: () => { location.href = 'https://github.com/davidinblack/Ipod-web/releases/latest/download/ipod.apk'; } },
         { title: 'Buscar actualización', onTap: async () => { await checkVersion(); toast(updateAvailable ? `Nueva versión: ${updateAvailable}` : 'Estás al día'); refresh(); } },
       ] },
     );

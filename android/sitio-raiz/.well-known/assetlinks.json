@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "io.github.davidinblack.ipod",
+    "sha256_cert_fingerprints": ["BA:EA:C2:1A:1E:3F:41:BA:EC:AE:AD:8D:07:6B:A1:8B:B4:C1:01:21:0F:B7:0A:1E:A7:64:1A:B5:4E:D1:08:C8"]
+  }
+}]
