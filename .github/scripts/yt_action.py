@@ -68,7 +68,8 @@ else:
             meta.update(status="done", filename=job["filename"], size=size, cover=bool(cover))
 
 if meta["error"] and "Sign in to confirm" in meta["error"]:
-    meta["error"] = "YouTube bloqueó a GitHub. Agrega el secreto YT_COOKIES (ver README)."
+    meta["error"] = ("YouTube bloqueó a GitHub aun con el complemento antibot. "
+                     "Agrega el secreto YT_COOKIES (ver README) o vuelve a intentar más tarde.")
 
 print(json.dumps(meta, ensure_ascii=False, indent=2))
 

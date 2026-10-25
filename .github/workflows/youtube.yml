@@ -1,8 +1,15 @@
 # Convierte un enlace de YouTube en MP3 (título, artista y portada) y lo deja
 # en la rama "descargas", de donde la app lo recoge y lo borra.
 # La app lo lanza sola; también puedes lanzarlo a mano desde la pestaña Actions.
+#
+# Para que YouTube no bloquee a GitHub se usan dos defensas:
+#  1. bgutil-ytdlp-pot-provider: genera los "PO tokens" que YouTube pide (sin configurar nada).
+#  2. El secreto opcional YT_COOKIES (cookies.txt de una cuenta de YouTube), si el bloqueo persiste.
+#
+# Cada vez que cambia este archivo o el script, se hace una prueba con un video corto
+# de dominio público ("Me at the zoo") para comprobar que todo funciona.
 name: Descargar de YouTube
-run-name: yt ${{ inputs.id }}
+run-name: yt ${{ inputs.id || format('prueba-{0}', github.run_number) }}
 
 on:
   workflow_dispatch:
@@ -16,20 +23,32 @@ on:
         required: false
         type: string
         default: manual
+  push:
+    branches: [main]
+    paths: ['.github/workflows/youtube.yml', '.github/scripts/yt_action.py', 'server/server.py']
 
 permissions:
   contents: write
+
+env:
+  BGUTIL_VERSION: '2.0.2'
 
 jobs:
   descargar:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 1
 
-      - uses: actions/setup-python@v5
+      # generador de PO tokens (servidor local en 127.0.0.1:4416)
+      - name: Iniciar complemento antibot
+        run: |
+          docker run --name bgutil -d --init -p 127.0.0.1:4416:4416 \
+            "brainicism/bgutil-ytdlp-pot-provider:${BGUTIL_VERSION}"
+
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -41,12 +60,21 @@ jobs:
       - name: Preparar
         run: |
           command -v ffmpeg >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg)
-          pip install -q -U "yt-dlp[default]"
-          yt-dlp --version
+          pip install -q -U "yt-dlp[default]" "bgutil-ytdlp-pot-provider==${BGUTIL_VERSION}"
+          echo "yt-dlp $(yt-dlp --version)"
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null http://127.0.0.1:4416/ping; then echo "complemento antibot listo"; break; fi
+            sleep 2
+          done
+          curl -s http://127.0.0.1:4416/ping || echo "::warning::El complemento antibot no respondió; se intenta sin él"
 
       - name: Descargar y convertir a MP3
         env:
-          YT_URL: ${{ inputs.url }}
-          REQ_ID: ${{ inputs.id }}
+          YT_URL: ${{ inputs.url || 'https://www.youtube.com/watch?v=jNQXAC9IVRw' }}
+          REQ_ID: ${{ inputs.id || format('prueba-{0}', github.run_number) }}
           YT_COOKIES: ${{ secrets.YT_COOKIES }}
         run: python .github/scripts/yt_action.py
+
+      - name: Registro del complemento
+        if: always()
+        run: docker logs bgutil 2>&1 | tail -n 20 || true

@@ -116,6 +116,9 @@ Tarda 1–2 minutos por canción. También se puede lanzar a mano: **Actions ›
 
 ### Si YouTube bloquea a GitHub ("Sign in to confirm you're not a bot")
 
+El workflow ya incluye el complemento antibot [bgutil-ytdlp-pot-provider](https://pypi.org/project/bgutil-ytdlp-pot-provider), que genera los
+«PO tokens» que pide YouTube. Si aun así aparece el bloqueo, agrega las cookies:
+
 Exporta tus cookies de youtube.com en formato `cookies.txt` (con una extensión tipo *Get cookies.txt LOCALLY*;
 mejor de una cuenta secundaria) y guárdalas en **Settings › Secrets and variables › Actions ›
 New repository secret** con el nombre `YT_COOKIES`. Los secretos no aparecen en los registros.
