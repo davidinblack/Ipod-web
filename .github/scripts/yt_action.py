@@ -35,6 +35,14 @@ os.environ.setdefault("IPOD_MAX_DURATION", "4200")  # 70 min → el MP3 cabe en 
 os.environ.setdefault("IPOD_QUALITY", "160")
 cookies = os.environ.get("YT_COOKIES", "")
 if cookies.strip():
+    # diagnóstico sin revelar el contenido: ¿parece un cookies.txt de YouTube?
+    lines = [l for l in cookies.splitlines() if l.strip() and not l.startswith("#")]
+    yt = [l for l in lines if "youtube.com" in l and l.count("\t") >= 6]
+    if not yt:
+        print(f"::warning::YT_COOKIES no parece un cookies.txt de YouTube ({len(cookies)} caracteres, "
+              f"{len(lines)} líneas, 0 cookies de youtube.com). Pega el CONTENIDO del archivo exportado, no su nombre.")
+    else:
+        print(f"::notice::YT_COOKIES válido: {len(yt)} cookies de youtube.com")
     path = os.path.join(tempfile.mkdtemp(), "cookies.txt")
     with open(path, "w") as f:
         f.write(cookies if cookies.endswith("\n") else cookies + "\n")
