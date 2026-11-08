@@ -786,3 +786,11 @@ div.thumb svg { width: 26px; fill: #fff; }
 .row.pend .t { color: #8a8a8a; }
 .row.pend .lead { color: #2a6be0; font-size: 17px; }
 .row.pend:active .t { color: #fff; }
+
+/* repetir y aleatorio siempre visibles junto a los controles */
+.np-btns button.np-mode { width: 44px; height: 44px; opacity: .9; }
+.np-btns .np-mode svg { width: 24px; filter: none; }
+.np-btns .np-mode.on svg { fill: #4a95ff; filter: drop-shadow(0 0 4px rgba(62, 140, 248, .9)); }
+.np-btns .np-rep b { position: absolute; right: 6px; bottom: 6px; font-size: 11px; font-weight: 700; color: #4a95ff; }
+.np-btns .np-mode { position: relative; }
+.now.land .np-btns button.np-mode { height: 40px; }

@@ -47,7 +47,9 @@ ipod/
 | Listas | Mantener presionado | Reproducir a continuación, añadir a lista, quitar, eliminar archivo |
 | Listas | Arrastrar sobre el índice A–Z | Saltar a la letra |
 | Barra de pestañas | Tocar la pestaña activa | Volver al inicio de esa pestaña |
-| Ahora suena | Tocar la portada | Mostrar barra de posición, repetir y aleatorio |
+| Ahora suena | Tocar la portada | Mostrar la barra de posición |
+| Ahora suena | 🔁 (izquierda de los controles) | Repetir: No → Toda la lista → Esta canción (aparece un «1») |
+| Ahora suena | 🔀 (derecha de los controles) | Aleatorio sí/no |
 | Ahora suena | Deslizar la portada ← / → | Siguiente / anterior |
 | Ahora suena | Mantener presionada la portada | Opciones de la canción (editar, añadir a lista…) |
 | Ahora suena | Botón de la esquina | Ver la lista que suena con su portada y la canción actual marcada; ✎ para editar |

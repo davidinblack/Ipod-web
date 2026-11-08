@@ -63,6 +63,7 @@ const savePlaylists = () => db.kvSet('playlists', playlists).catch(() => {});
 const layer = $('#layer');
 
 function toast(msg, ms = 1600) {
+  layer.querySelectorAll('.hud:not(.prog)').forEach((x) => x.remove()); // uno a la vez
   const el = h(`<div class="hud">${esc(msg)}</div>`);
   layer.appendChild(el);
   setTimeout(() => el.remove(), ms);
@@ -1573,7 +1574,11 @@ function syncLand() {
 }
 landMQ.addEventListener('change', syncLand);
 syncLand();
-$('#npRepeat').onclick = () => { PL.setRepeat({ off: 'all', all: 'one', one: 'off' }[P.repeat]); syncModes(); };
+$('#npRepeat').onclick = () => {
+  PL.setRepeat({ off: 'all', all: 'one', one: 'off' }[P.repeat]);
+  syncModes();
+  toast({ off: 'Repetir: No', all: 'Repetir: toda la lista', one: 'Repetir: esta canción' }[P.repeat], 1300);
+};
 $('#npShuffle').onclick = () => { PL.setShuffle(!P.shuffle); syncModes(); toast(P.shuffle ? 'Aleatorio: Sí' : 'Aleatorio: No', 1100); };
 npSeek.addEventListener('input', () => {
   seeking = true;

@@ -36,13 +36,11 @@
     <div class="np-stage" id="npStage">
       <div class="np-art" id="npArt"></div>
       <div class="np-scrub" id="npScrub" hidden>
-        <button class="np-rep" id="npRepeat" aria-label="Repetir"></button>
         <div class="np-time">
           <span id="npCur">0:00</span>
           <input type="range" class="slider" id="npSeek" min="0" max="1000" value="0" aria-label="Posición">
           <span id="npLeft">-0:00</span>
         </div>
-        <button class="np-shuf" id="npShuffle" aria-label="Aleatorio"></button>
       </div>
     </div>
 
@@ -50,9 +48,11 @@
 
     <footer class="np-ctrl">
       <div class="np-btns">
+        <button class="np-rep np-mode" id="npRepeat" aria-label="Repetir"></button>
         <button id="npPrev" aria-label="Anterior"></button>
         <button id="npPlay" aria-label="Reproducir"></button>
         <button id="npNext" aria-label="Siguiente"></button>
+        <button class="np-shuf np-mode" id="npShuffle" aria-label="Aleatorio"></button>
       </div>
       <div class="np-vol">
         <i class="spk0"></i>
