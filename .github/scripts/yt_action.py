@@ -35,7 +35,29 @@ if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", req_id):
 os.environ.setdefault("IPOD_MAX_DURATION", "4200")  # 70 min → el MP3 cabe en GitHub
 os.environ.setdefault("IPOD_QUALITY", "160")
 cookies = os.environ.get("YT_COOKIES", "")
+
+
+def repair_cookies(text):
+    """Rehace un cookies.txt cuyos tabuladores se volvieron espacios al copiar y pegar."""
+    out = ["# Netscape HTTP Cookie File"]
+    fixed = 0
+    for line in text.replace("\r", "").splitlines():
+        if not line.strip() or (line.startswith("#") and not line.startswith("#HttpOnly_")):
+            continue
+        if line.count("\t") >= 6:
+            out.append(line)
+            continue
+        parts = line.split(None, 6)
+        if len(parts) == 7 and parts[1].upper() in ("TRUE", "FALSE") and parts[3].upper() in ("TRUE", "FALSE"):
+            out.append("\t".join(parts))
+            fixed += 1
+    return "\n".join(out) + "\n", fixed
+
+
 if cookies.strip():
+    cookies, n_fixed = repair_cookies(cookies)
+    if n_fixed:
+        print(f"::notice::YT_COOKIES reparado: {n_fixed} líneas tenían espacios en lugar de tabuladores")
     # diagnóstico sin revelar el contenido: ¿parece un cookies.txt de YouTube?
     lines = [l for l in cookies.splitlines() if l.strip() and not l.startswith("#")]
     yt = [l for l in lines if "youtube.com" in l and l.count("\t") >= 6]
