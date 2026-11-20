@@ -25,7 +25,7 @@ on:
         default: manual
   push:
     branches: [main]
-    paths: ['.github/workflows/youtube.yml', '.github/scripts/yt_action.py', 'server/server.py']
+    paths: ['.github/workflows/youtube.yml', '.github/scripts/yt_action.py', 'server/server.py', '.github/prueba-descarga.txt']
 
 permissions:
   contents: write
