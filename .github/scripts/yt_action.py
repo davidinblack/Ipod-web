@@ -70,7 +70,12 @@ if cookies.strip():
               f"{tabs} con tabuladores, encabezado Netscape: {'sí' if header else 'no'}). "
               f"Dominios: {', '.join(doms[:8]) or 'ninguno'}. Exporta estando en youtube.com.")
     else:
-        print(f"::notice::YT_COOKIES válido: {len(yt)} cookies de youtube.com")
+        names = sorted({l.split("\t")[5] for l in yt if len(l.split("\t")) >= 7})
+        login = {"SID", "HSID", "SSID", "APISID", "SAPISID", "LOGIN_INFO", "__Secure-3PSID", "__Secure-1PSID"}
+        print(f"::notice::YT_COOKIES válido: {len(yt)} cookies de youtube.com ({', '.join(names)})")
+        if not (login & set(names)):
+            print("::warning::Las cookies no incluyen una sesión iniciada (faltan SID/SAPISID/LOGIN_INFO): "
+                  "entra a YouTube con tu cuenta antes de exportar.")
     path = os.path.join(tempfile.mkdtemp(), "cookies.txt")
     with open(path, "w") as f:
         f.write(cookies if cookies.endswith("\n") else cookies + "\n")
