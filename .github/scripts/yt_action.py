@@ -1,3 +1,4 @@
+# Prueba automática: se ejecuta al cambiar este script.
 #!/usr/bin/env python3
 """
 Paso del workflow "Descargar de YouTube".
