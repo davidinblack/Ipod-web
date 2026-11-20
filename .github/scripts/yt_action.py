@@ -1,5 +1,5 @@
-# Prueba automática: se ejecuta al cambiar este script.
 #!/usr/bin/env python3
+# Prueba automática: el workflow se ejecuta con un video de prueba al cambiar este script.
 """
 Paso del workflow "Descargar de YouTube".
 
