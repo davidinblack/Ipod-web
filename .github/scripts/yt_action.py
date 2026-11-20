@@ -40,8 +40,13 @@ if cookies.strip():
     lines = [l for l in cookies.splitlines() if l.strip() and not l.startswith("#")]
     yt = [l for l in lines if "youtube.com" in l and l.count("\t") >= 6]
     if not yt:
-        print(f"::warning::YT_COOKIES no parece un cookies.txt de YouTube ({len(cookies)} caracteres, "
-              f"{len(lines)} líneas, 0 cookies de youtube.com). Pega el CONTENIDO del archivo exportado, no su nombre.")
+        # sólo se muestran dominios y formato, nunca valores
+        doms = sorted({(l.split("\t")[0] if "\t" in l else l.split()[0]).lstrip(".") for l in lines if l.split()})
+        tabs = sum(1 for l in lines if l.count("\t") >= 6)
+        header = cookies.lstrip().startswith("# Netscape HTTP Cookie File") or cookies.lstrip().startswith("# HTTP Cookie File")
+        print(f"::warning::YT_COOKIES no trae cookies de youtube.com ({len(cookies)} caracteres, {len(lines)} líneas, "
+              f"{tabs} con tabuladores, encabezado Netscape: {'sí' if header else 'no'}). "
+              f"Dominios: {', '.join(doms[:8]) or 'ninguno'}. Exporta estando en youtube.com.")
     else:
         print(f"::notice::YT_COOKIES válido: {len(yt)} cookies de youtube.com")
     path = os.path.join(tempfile.mkdtemp(), "cookies.txt")
